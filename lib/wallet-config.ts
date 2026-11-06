@@ -1,0 +1,229 @@
+import { defineChain, http, type Chain, type Transport } from "viem";
+import { localChainId } from "@/lib/wallet/local-chain";
+
+export type WalletAppEnvironment = "development" | "staging" | "production";
+export type WalletNetwork = "robinhood" | "robinhood-testnet" | "anvil";
+
+// Robinhood reads go through the same-origin server proxy. The upstream RPC
+// URL and credentials remain server-only; these paths are safe to expose.
+const ROBINHOOD_MAINNET_RPC_PROXY = "/api/rpc/4663";
+const ROBINHOOD_TESTNET_RPC_PROXY = "/api/rpc/46630";
+const ROBINHOOD_MAINNET_WALLET_RPC_PROXY = "/api/wallet-rpc/4663";
+const ROBINHOOD_TESTNET_WALLET_RPC_PROXY = "/api/wallet-rpc/46630";
+
+export const robinhoodMainnet = defineChain({
+  id: 4_663,
+  name: "Robinhood Chain",
+  nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+  rpcUrls: {
+    default: { http: [ROBINHOOD_MAINNET_RPC_PROXY] },
+  },
+  blockExplorers: {
+    default: {
+      name: "Robinhood Chain Explorer",
+      url: "https://robinhoodchain.blockscout.com",
+    },
+  },
+});
+
+export const robinhoodTestnet = defineChain({
+  id: 46_630,
+  name: "Robinhood Chain Testnet",
+  nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+  rpcUrls: {
+    default: { http: [ROBINHOOD_TESTNET_RPC_PROXY] },
+  },
+  blockExplorers: {
+    default: {
+      name: "Robinhood Testnet Explorer",
+      url: "https://explorer.testnet.chain.robinhood.com",
+    },
+  },
+  testnet: true,
+});
+
+export const anvil = defineChain({
+  id: 31_337,
+  name: "Local Anvil",
+  nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+  rpcUrls: {
+    default: { http: ["http://127.0.0.1:8545"] },
+  },
+  testnet: true,
+});
+
+function parseEnvironment(value: string | undefined): WalletAppEnvironment {
+  if (!value) return "development";
+  if (value === "development" || value === "staging" || value === "production") return value;
+  throw new Error("NEXT_PUBLIC_APP_ENV must be development, staging, or production.");
+}
+
+function parseNetwork(
+  value: string | undefined,
+  appEnvironment: WalletAppEnvironment
+): WalletNetwork {
+  const network = value || "robinhood-testnet";
+  if (network !== "robinhood" && network !== "robinhood-testnet" && network !== "anvil") {
+    throw new Error("NEXT_PUBLIC_APP_NETWORK must be robinhood, robinhood-testnet, or anvil.");
+  }
+  if (network === "anvil" && appEnvironment !== "development") {
+    throw new Error("Local chains are only available when NEXT_PUBLIC_APP_ENV is development.");
+  }
+  return network;
+}
+
+function isLoopbackUrl(value: string): boolean {
+  const hostname = new URL(value).hostname.toLowerCase();
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]";
+}
+
+function parsePublicRpc(value: string | undefined, variableName: string): string | null {
+  if (!value) return null;
+
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error(`${variableName} must be an absolute HTTP(S) URL.`);
+  }
+
+  if ((url.protocol !== "http:" && url.protocol !== "https:") || url.username || url.password) {
+    throw new Error(`${variableName} must be a credential-free HTTP(S) URL.`);
+  }
+  return url.toString();
+}
+
+export type WalletEnvironment = Readonly<{
+  appEnvironment: WalletAppEnvironment;
+  network: WalletNetwork;
+  appId: string | null;
+  clientId: string | null;
+  robinhoodRpcUrl: string;
+  robinhoodTestnetRpcUrl: string;
+  anvilRpcUrl: string;
+  anvilChain: Chain;
+  defaultChain: Chain;
+  supportedChains: readonly [Chain, ...Chain[]];
+  privyDefaultChain: Chain;
+  privySupportedChains: readonly [Chain, ...Chain[]];
+  configured: boolean;
+}>;
+
+function chainWithRpc(chain: Chain, rpcUrl: string): Chain {
+  return {
+    ...chain,
+    rpcUrls: {
+      ...chain.rpcUrls,
+      default: { http: [rpcUrl] },
+    },
+  };
+}
+
+function chainWithPrivyWalletRpc(chain: Chain, rpcUrl: string): Chain {
+  return {
+    ...chain,
+    rpcUrls: {
+      ...chain.rpcUrls,
+      privyWalletOverride: { http: [rpcUrl] },
+    },
+  };
+}
+
+export function readWalletEnvironment(
+  environment: Record<string, string | undefined> = {
+    NEXT_PUBLIC_APP_ENV: process.env.NEXT_PUBLIC_APP_ENV,
+    NEXT_PUBLIC_APP_NETWORK: process.env.NEXT_PUBLIC_APP_NETWORK,
+    NEXT_PUBLIC_PRIVY_APP_ID: process.env.NEXT_PUBLIC_PRIVY_APP_ID,
+    NEXT_PUBLIC_PRIVY_CLIENT_ID: process.env.NEXT_PUBLIC_PRIVY_CLIENT_ID,
+    NEXT_PUBLIC_ANVIL_RPC_URL: process.env.NEXT_PUBLIC_ANVIL_RPC_URL,
+    NEXT_PUBLIC_ANVIL_CHAIN_ID: process.env.NEXT_PUBLIC_ANVIL_CHAIN_ID,
+  }
+): WalletEnvironment {
+  const appEnvironment = parseEnvironment(environment.NEXT_PUBLIC_APP_ENV);
+  const network = parseNetwork(environment.NEXT_PUBLIC_APP_NETWORK, appEnvironment);
+  const appId = environment.NEXT_PUBLIC_PRIVY_APP_ID?.trim() || null;
+  const clientId = environment.NEXT_PUBLIC_PRIVY_CLIENT_ID?.trim() || null;
+  const configuredAnvilRpc = parsePublicRpc(
+    environment.NEXT_PUBLIC_ANVIL_RPC_URL,
+    "NEXT_PUBLIC_ANVIL_RPC_URL"
+  );
+
+  if (appEnvironment !== "development" && !appId) {
+    throw new Error("NEXT_PUBLIC_PRIVY_APP_ID is required outside development.");
+  }
+  if (configuredAnvilRpc && !isLoopbackUrl(configuredAnvilRpc)) {
+    throw new Error("NEXT_PUBLIC_ANVIL_RPC_URL must be loopback-only.");
+  }
+
+  const anvilRpcUrl = configuredAnvilRpc ?? "http://127.0.0.1:8545/";
+  const anvilChainId = localChainId(environment);
+  const configuredAnvil = chainWithRpc(
+    {
+      ...anvil,
+      id: anvilChainId,
+      name: anvilChainId === 4_663 ? "Robinhood mainnet fork" : anvil.name,
+    },
+    anvilRpcUrl
+  );
+  const defaultChain =
+    network === "anvil"
+      ? configuredAnvil
+      : network === "robinhood"
+        ? robinhoodMainnet
+        : robinhoodTestnet;
+  const publicRobinhoodChains = [robinhoodMainnet, robinhoodTestnet];
+  const privyRobinhoodChains = [
+    chainWithPrivyWalletRpc(robinhoodMainnet, ROBINHOOD_MAINNET_WALLET_RPC_PROXY),
+    chainWithPrivyWalletRpc(robinhoodTestnet, ROBINHOOD_TESTNET_WALLET_RPC_PROXY),
+  ];
+  const privyDefaultChain =
+    network === "anvil"
+      ? anvilChainId === 4_663
+        ? chainWithPrivyWalletRpc(configuredAnvil, anvilRpcUrl)
+        : configuredAnvil
+      : privyRobinhoodChains.find((chain) => chain.id === defaultChain.id)!;
+  return {
+    appEnvironment,
+    network,
+    appId,
+    clientId,
+    robinhoodRpcUrl: ROBINHOOD_MAINNET_RPC_PROXY,
+    robinhoodTestnetRpcUrl: ROBINHOOD_TESTNET_RPC_PROXY,
+    anvilRpcUrl,
+    anvilChain: configuredAnvil,
+    defaultChain,
+    supportedChains: [
+      defaultChain,
+      ...publicRobinhoodChains.filter((chain) => chain.id !== defaultChain.id),
+      ...(appEnvironment === "development" && defaultChain.id !== configuredAnvil.id
+        ? [configuredAnvil]
+        : []),
+    ] as [Chain, ...Chain[]],
+    privyDefaultChain,
+    privySupportedChains: [
+      privyDefaultChain,
+      ...privyRobinhoodChains.filter((chain) => chain.id !== privyDefaultChain.id),
+      ...(appEnvironment === "development" && privyDefaultChain.id !== configuredAnvil.id
+        ? [configuredAnvil]
+        : []),
+    ] as [Chain, ...Chain[]],
+    configured: Boolean(appId),
+  };
+}
+
+export function createWalletTransports(environment: WalletEnvironment): Record<number, Transport> {
+  // These transports serve authoritative reads and simulations. Wallet-driven
+  // writes use the connected wallet provider. Never fail over critical traffic
+  // to a public RPC, and do not multiply a failed batch with transport retries.
+  // Indexer availability has its own single bounded retry policy.
+  const batchedHttp = (url: string) =>
+    http(url, { batch: { batchSize: 50, wait: 8 }, retryCount: 0 });
+  const transports: Record<number, Transport> = {
+    [robinhoodMainnet.id]: batchedHttp(environment.robinhoodRpcUrl),
+    [robinhoodTestnet.id]: batchedHttp(environment.robinhoodTestnetRpcUrl),
+  };
+  if (environment.appEnvironment === "development") {
+    transports[environment.anvilChain.id] = batchedHttp(environment.anvilRpcUrl);
+  }
+  return transports;
+}

@@ -1,0 +1,7 @@
+{
+  "ignoreFiles": [".next/**", ".local/**", "coverage/**", "node_modules/**"],
+  "rules": {
+    "color-no-invalid-hex": true,
+    "declaration-block-no-duplicate-properties": true
+  }
+}

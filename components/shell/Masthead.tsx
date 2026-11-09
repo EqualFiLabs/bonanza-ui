@@ -26,7 +26,12 @@ function WalletControl() {
           <i className={`dot ${wallet.isTargetChain ? "" : "off"}`} />
           <span className="mono">{shortAddress(wallet.address)}</span>
         </div>
-        <button type="button" className="linkish" onClick={wallet.logout}>
+        <button
+          type="button"
+          className="linkish"
+          disabled={wallet.busyAction === "disconnect"}
+          onClick={wallet.logout}
+        >
           Sign out
         </button>
       </div>

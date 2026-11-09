@@ -46,10 +46,11 @@ const multiplier = (position: StakingAccount) =>
 function Stake({ position }: { position: StakingAccount }) {
   const { protocol, now } = useProtocol();
   const { bona, decimals } = useBona();
-  const { run } = useTx();
+  const { busy, run } = useTx();
   const gate = useWalletGate();
   const [tab, setTab] = useState<"stake" | "unstake">("stake");
   const [text, setText] = useState("");
+  const txKey = `${tab}-${position.id}`;
 
   const amount = parseAmount(text, decimals);
   const value = amount ?? 0n;
@@ -67,7 +68,7 @@ function Stake({ position }: { position: StakingAccount }) {
 
   const submit = async () => {
     const done = await run(
-      tab,
+      txKey,
       async () => ({
         ...lottery(),
         functionName: staking ? "stakeFiddy" : "unstakeFiddy",
@@ -83,17 +84,19 @@ function Stake({ position }: { position: StakingAccount }) {
 
   const action = () => {
     if (gate) return gate;
+    // A transaction keeps its own button until it finishes, whatever the next poll shows.
+    if (busy[txKey]) return <TxButton txKey={txKey}>{staking ? "Stake" : "Unstake"}</TxButton>;
     if (staking) {
       if (protocol.paused) {
         return (
-          <TxButton txKey="stake" disabled>
+          <TxButton txKey={txKey} disabled>
             Staking is paused
           </TxButton>
         );
       }
       if (amount === null || value === 0n) {
         return (
-          <TxButton txKey="stake" disabled>
+          <TxButton txKey={txKey} disabled>
             Enter an amount
           </TxButton>
         );
@@ -101,7 +104,7 @@ function Stake({ position }: { position: StakingAccount }) {
       if (value > free) {
         return (
           <>
-            <TxButton txKey="stake" disabled>
+            <TxButton txKey={txKey} disabled>
               Not enough unstaked BONA
             </TxButton>
             <p className="why">This position has {bona(free)} unstaked.</p>
@@ -109,14 +112,14 @@ function Stake({ position }: { position: StakingAccount }) {
         );
       }
       return (
-        <TxButton txKey="stake" onClick={() => void submit()}>
+        <TxButton txKey={txKey} onClick={() => void submit()}>
           Stake {bona(value)} BONA
         </TxButton>
       );
     }
     if (position.staked === 0n) {
       return (
-        <TxButton txKey="unstake" disabled>
+        <TxButton txKey={txKey} disabled>
           Nothing staked
         </TxButton>
       );
@@ -124,7 +127,7 @@ function Stake({ position }: { position: StakingAccount }) {
     if (locked) {
       return (
         <>
-          <TxButton txKey="unstake" disabled>
+          <TxButton txKey={txKey} disabled>
             Still locked
           </TxButton>
           <p className="why">Unstaking opens {LOCK_HOURS} hours after the weighted stake time.</p>
@@ -133,20 +136,20 @@ function Stake({ position }: { position: StakingAccount }) {
     }
     if (amount === null || value === 0n) {
       return (
-        <TxButton txKey="unstake" disabled>
+        <TxButton txKey={txKey} disabled>
           Enter an amount
         </TxButton>
       );
     }
     if (value > position.staked) {
       return (
-        <TxButton txKey="unstake" disabled>
+        <TxButton txKey={txKey} disabled>
           More than is staked
         </TxButton>
       );
     }
     return (
-      <TxButton txKey="unstake" onClick={() => void submit()}>
+      <TxButton txKey={txKey} onClick={() => void submit()}>
         Unstake {bona(value)} BONA
       </TxButton>
     );
@@ -307,14 +310,18 @@ function Revenue({ position }: { position: StakingAccount }) {
 function OperatorBoost({ position }: { position: StakingAccount }) {
   const { protocol } = useProtocol();
   const { address } = useWalletState();
-  const { run } = useTx();
+  const { busy, run } = useTx();
   const gate = useWalletGate();
   const [text, setText] = useState("");
   const operatorId = /^\d+$/.test(text.trim()) ? BigInt(text.trim()) : null;
+  const registerKey = `register-${position.id}`;
+  const removeKey = `remove-boost-${position.id}`;
+  // The card stays as it was until its own transaction finishes.
+  const registered = busy[removeKey] ? true : busy[registerKey] ? false : position.registered;
 
   const register = async () => {
     const done = await run(
-      "register",
+      registerKey,
       async () => {
         const [owner, tier] = await Promise.all([
           publicClient.readContract({
@@ -366,7 +373,7 @@ function OperatorBoost({ position }: { position: StakingAccount }) {
   return (
     <section className="card" aria-label="Operator boost">
       <h2 className="disp">Operator boost</h2>
-      {position.registered ? (
+      {registered ? (
         <>
           <div className="stats pair">
             <div>
@@ -384,12 +391,12 @@ function OperatorBoost({ position }: { position: StakingAccount }) {
           </p>
           <div className="pair-actions">
             {accountAction(
-              "checkpoint",
+              `checkpoint-${position.id}`,
               "checkpointFiddyAccount",
               "Checkpoint",
               "Checkpoint booked"
             )}
-            {accountAction("remove-boost", "removeFiddyOperator", "Remove boost", "Boost removed")}
+            {accountAction(removeKey, "removeFiddyOperator", "Remove boost", "Boost removed")}
           </div>
         </>
       ) : (
@@ -410,7 +417,7 @@ function OperatorBoost({ position }: { position: StakingAccount }) {
           </label>
           {gate ?? (
             <TxButton
-              txKey="register"
+              txKey={registerKey}
               disabled={operatorId === null || protocol.paused || !protocol.boostsEnabled}
               onClick={() => void register()}
             >
@@ -471,7 +478,7 @@ function Conversions({ position }: { position: StakingAccount }) {
   const { protocol, account } = useProtocol();
   const { bona, decimals } = useBona();
   const { address } = useWalletState();
-  const { run } = useTx();
+  const { busy, run } = useTx();
   const gate = useWalletGate();
   const [unwrapText, setUnwrapText] = useState("");
   const [wrapText, setWrapText] = useState("");
@@ -480,6 +487,9 @@ function Conversions({ position }: { position: StakingAccount }) {
   const free = position.balance - position.staked;
   const room = wrapCap > wrapOutstanding ? wrapCap - wrapOutstanding : 0n;
 
+  const unwrapKey = `unwrap-${position.id}`;
+  const wrapKey = `wrap-${position.id}`;
+  const wrapApproveKey = `wrap-approve-${position.id}`;
   const unwrapAmount = parseAmount(unwrapText, decimals) ?? 0n;
   const wrapAmount = parseAmount(wrapText, decimals) ?? 0n;
   const held = account?.balances[underlying.address] ?? 0n;
@@ -487,26 +497,27 @@ function Conversions({ position }: { position: StakingAccount }) {
 
   const unwrapAction = () => {
     if (gate) return gate;
+    if (busy[unwrapKey]) return <TxButton txKey={unwrapKey}>Unwrap</TxButton>;
     if (unwrapAmount === 0n) {
       return (
-        <TxButton txKey="unwrap" disabled>
+        <TxButton txKey={unwrapKey} disabled>
           Enter an amount
         </TxButton>
       );
     }
     if (unwrapAmount > free) {
       return (
-        <TxButton txKey="unwrap" disabled>
+        <TxButton txKey={unwrapKey} disabled>
           Not enough unstaked BONA
         </TxButton>
       );
     }
     return (
       <TxButton
-        txKey="unwrap"
+        txKey={unwrapKey}
         onClick={async () => {
           const done = await run(
-            "unwrap",
+            unwrapKey,
             async () => ({
               ...lottery(),
               functionName: "unwrapFiddy",
@@ -527,30 +538,32 @@ function Conversions({ position }: { position: StakingAccount }) {
 
   const wrapAction = () => {
     if (gate) return gate;
+    if (busy[wrapApproveKey]) return <TxButton txKey={wrapApproveKey}>Approve</TxButton>;
+    if (busy[wrapKey]) return <TxButton txKey={wrapKey}>Wrap</TxButton>;
     if (protocol.paused) {
       return (
-        <TxButton txKey="wrap" disabled>
+        <TxButton txKey={wrapKey} disabled>
           Wrapping is paused
         </TxButton>
       );
     }
     if (wrapAmount === 0n) {
       return (
-        <TxButton txKey="wrap" disabled>
+        <TxButton txKey={wrapKey} disabled>
           Enter an amount
         </TxButton>
       );
     }
     if (wrapAmount > room) {
       return (
-        <TxButton txKey="wrap" disabled>
+        <TxButton txKey={wrapKey} disabled>
           Only {bona(room)} left under the cap
         </TxButton>
       );
     }
     if (wrapAmount > held) {
       return (
-        <TxButton txKey="wrap" disabled>
+        <TxButton txKey={wrapKey} disabled>
           Not enough {underlying.symbol}
         </TxButton>
       );
@@ -558,10 +571,10 @@ function Conversions({ position }: { position: StakingAccount }) {
     if (allowance < wrapAmount) {
       return (
         <TxButton
-          txKey="wrap-approve"
+          txKey={wrapApproveKey}
           onClick={() =>
             void run(
-              "wrap-approve",
+              wrapApproveKey,
               async () => ({
                 address: underlying.address as Address,
                 abi: erc20Abi,
@@ -578,10 +591,10 @@ function Conversions({ position }: { position: StakingAccount }) {
     }
     return (
       <TxButton
-        txKey="wrap"
+        txKey={wrapKey}
         onClick={async () => {
           const done = await run(
-            "wrap",
+            wrapKey,
             async () => ({
               ...lottery(),
               functionName: "wrapFiddy",

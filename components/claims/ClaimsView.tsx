@@ -104,8 +104,15 @@ function ClaimRow({ claim, owner }: { claim: Claim; owner: Address }) {
 
 export function ClaimsView() {
   const { account, accountLoading } = useProtocol();
+  const { busy } = useTx();
   const gate = useWalletGate();
   const claims = useClaims();
+  // While a claim runs, the list holds still. Otherwise the regular poll can remove a paid row
+  // before its transaction reports back.
+  const [shown, setShown] = useState(claims);
+  const claiming = shown.some((claim) => busy[claim.key]);
+  if (!claiming && shown !== claims) setShown(claims);
+  const rows = claiming ? shown : claims;
 
   if (gate) {
     return (
@@ -126,7 +133,7 @@ export function ClaimsView() {
       </>
     );
   }
-  if (claims.length === 0) {
+  if (rows.length === 0) {
     return (
       <>
         <PageHead />
@@ -143,7 +150,7 @@ export function ClaimsView() {
     <>
       <PageHead />
       <div className="tablewrap">
-        {claims.map((claim) => (
+        {rows.map((claim) => (
           <ClaimRow key={claim.key} claim={claim} owner={account.owner} />
         ))}
       </div>

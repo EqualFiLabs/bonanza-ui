@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { decodeEventLog, erc20Abi, type TransactionReceipt } from "viem";
 
@@ -7,7 +8,7 @@ import { TxButton } from "@/components/shell/TxButton";
 import { useWalletGate } from "@/components/shell/WalletGate";
 import { CREATE_POSITION_KEY, useCreatePosition } from "@/components/shell/usePositionActions";
 import { fetchBeacon } from "@/lib/chain/drand";
-import { deployment } from "@/lib/chain/client";
+import { deployment, publicClient } from "@/lib/chain/client";
 import { lotteryAbi } from "@/lib/contracts/generated/lottery";
 import {
   countdown,
@@ -27,11 +28,19 @@ import {
   tokenOf,
   type Listing,
 } from "@/lib/protocol/rounds";
+import { RoundStatus } from "@/lib/protocol/types";
 import { useProtocol } from "@/providers/protocol-context";
+import { useToast } from "@/providers/toast-context";
 import { useTx } from "@/providers/tx-context";
 import { useWalletState } from "@/providers/wallet-context";
 
 import type { Reveal } from "./StaticField";
+
+export type DrawEvents = Readonly<{
+  started: (roundId: bigint) => void;
+  drawn: (reveal: Reveal) => void;
+  failed: (roundId: bigint) => void;
+}>;
 
 function RoundEyebrow({ text }: { text: string }) {
   return <div className="eyebrow">{text}</div>;
@@ -65,7 +74,7 @@ function PositionSelect({
 
 function OpenPanel({ listing }: { listing: Listing }) {
   const { protocol, account } = useProtocol();
-  const { run } = useTx();
+  const { busy, run } = useTx();
   const gate = useWalletGate();
   const createPosition = useCreatePosition();
   const { config, rewards, round } = listing;
@@ -92,10 +101,13 @@ function OpenPanel({ listing }: { listing: Listing }) {
   };
   const valid = quantity >= 1 && quantity <= limit;
   const presets = [...new Set([1, 5, 10, limit])].filter((value) => value <= limit);
+  // Keyed by channel, so an error stays with its round and survives the round opening.
+  const buyKey = `buy-${listing.version}`;
+  const approveKey = `approve-${listing.version}`;
 
   const buy = () =>
     run(
-      "buy",
+      buyKey,
       async () => {
         const position = needsPosition ? positionId! : (positionId ?? 0n);
         const call = { address: deployment!.lottery, abi: lotteryAbi };
@@ -125,7 +137,7 @@ function OpenPanel({ listing }: { listing: Listing }) {
 
   const approve = () =>
     run(
-      "approve",
+      approveKey,
       async () => ({
         address: token.address,
         abi: erc20Abi,
@@ -137,9 +149,12 @@ function OpenPanel({ listing }: { listing: Listing }) {
 
   const action = () => {
     if (gate) return gate;
+    // A transaction keeps its own button until it finishes, whatever the next poll shows.
+    if (busy[approveKey]) return <TxButton txKey={approveKey}>Approve</TxButton>;
+    if (busy[buyKey]) return <TxButton txKey={buyKey}>Buy</TxButton>;
     if (protocol.paused) {
       return (
-        <TxButton txKey="buy" disabled>
+        <TxButton txKey={buyKey} disabled>
           Buying is paused
         </TxButton>
       );
@@ -147,7 +162,7 @@ function OpenPanel({ listing }: { listing: Listing }) {
     if (!valid) {
       return (
         <>
-          <TxButton txKey="buy" disabled>
+          <TxButton txKey={buyKey} disabled>
             Choose a ticket count
           </TxButton>
           <p className="why">
@@ -158,7 +173,7 @@ function OpenPanel({ listing }: { listing: Listing }) {
     }
     if (!account) {
       return (
-        <TxButton txKey="buy" disabled>
+        <TxButton txKey={buyKey} disabled>
           Reading your wallet…
         </TxButton>
       );
@@ -176,7 +191,7 @@ function OpenPanel({ listing }: { listing: Listing }) {
     if (cost > balance) {
       return (
         <>
-          <TxButton txKey="buy" disabled>
+          <TxButton txKey={buyKey} disabled>
             Not enough {token.symbol}
           </TxButton>
           <p className="why">You have {formatToken(balance, token)}.</p>
@@ -185,14 +200,14 @@ function OpenPanel({ listing }: { listing: Listing }) {
     }
     if (allowance < cost) {
       return (
-        <TxButton txKey="approve" onClick={() => void approve()}>
+        <TxButton txKey={approveKey} onClick={() => void approve()}>
           Approve {formatToken(cost, token)}
         </TxButton>
       );
     }
     const verb = round ? "Buy" : "Open round · buy";
     return (
-      <TxButton txKey="buy" onClick={() => void buy()}>
+      <TxButton txKey={buyKey} onClick={() => void buy()}>
         {verb} {quantity} ticket{quantity > 1 ? "s" : ""}
       </TxButton>
     );
@@ -308,17 +323,20 @@ function WaitingPanel({ listing }: { listing: Listing }) {
   );
 }
 
-function ReadyPanel({ listing, onDrawn }: { listing: Listing; onDrawn: (reveal: Reveal) => void }) {
+function ReadyPanel({ listing, onDraw }: { listing: Listing; onDraw: DrawEvents }) {
   const { protocol } = useProtocol();
   const { run } = useTx();
+  const toast = useToast();
   const gate = useWalletGate();
   const round = listing.round!;
   const token = tokenOf(protocol, round.config.paymentToken);
   const split = actualAllocation(round);
+  const key = `settle-${round.id}`;
 
-  const draw = () =>
-    run(
-      "settle",
+  const draw = async () => {
+    onDraw.started(round.id);
+    const done = await run(
+      key,
       async () => {
         const beacon = await fetchBeacon(round.drandRound);
         return {
@@ -331,12 +349,16 @@ function ReadyPanel({ listing, onDrawn }: { listing: Listing; onDrawn: (reveal: 
       {
         action: `Draw round ${round.id}`,
         pending: "Posting beacon…",
+        success:
+          split.finalizer > 0n
+            ? `Round ${round.id} drawn. Your tip is in Claims.`
+            : `Round ${round.id} drawn.`,
         onReceipt: (receipt: TransactionReceipt) => {
           for (const log of receipt.logs) {
             try {
               const event = decodeEventLog({ abi: lotteryAbi, data: log.data, topics: log.topics });
               if (event.eventName === "RoundSettled") {
-                onDrawn({
+                onDraw.drawn({
                   roundId: round.id,
                   winner: event.args.winningTicket,
                   startedAt: Date.now(),
@@ -349,6 +371,18 @@ function ReadyPanel({ listing, onDrawn }: { listing: Listing; onDrawn: (reveal: 
         },
       }
     );
+    if (done) return;
+    onDraw.failed(round.id);
+    const latest = await publicClient
+      .readContract({
+        address: deployment!.lottery,
+        abi: lotteryAbi,
+        functionName: "round",
+        args: [round.id],
+      })
+      .catch(() => null);
+    if (latest?.status === RoundStatus.Settled) toast(`Someone else drew round ${round.id} first.`);
+  };
 
   return (
     <>
@@ -380,7 +414,7 @@ function ReadyPanel({ listing, onDrawn }: { listing: Listing; onDrawn: (reveal: 
         </span>
       </div>
       {gate ?? (
-        <TxButton txKey="settle" onClick={() => void draw()}>
+        <TxButton txKey={key} onClick={() => void draw()}>
           Draw round · earn {formatToken(split.finalizer, token)}
         </TxButton>
       )}
@@ -428,9 +462,9 @@ function SettledPanel({ listing }: { listing: Listing }) {
         </span>
       </div>
       {won && round.winnerClaimable > 0n ? (
-        <a className="btn win" href="/claims">
+        <Link className="btn win" href="/claims">
           Claim {formatAmount(round.winnerClaimable, token.decimals, 2)} {token.symbol}
-        </a>
+        </Link>
       ) : null}
     </>
   );
@@ -439,11 +473,11 @@ function SettledPanel({ listing }: { listing: Listing }) {
 export function TicketPanel({
   listing,
   reveal,
-  onDrawn,
+  onDraw,
 }: {
   listing: Listing;
   reveal: Reveal | null;
-  onDrawn: (reveal: Reveal) => void;
+  onDraw: DrawEvents;
 }) {
   const round = listing.round;
   if (reveal && round && reveal.roundId === round.id) {
@@ -464,9 +498,10 @@ export function TicketPanel({
     );
   }
   if (listing.phase === "open" || listing.phase === "idle") {
-    return <OpenPanel key={listing.key} listing={listing} />;
+    // Keyed by channel, so the ticket count survives the channel's first buyer opening a round.
+    return <OpenPanel key={listing.version.toString()} listing={listing} />;
   }
   if (listing.phase === "waiting") return <WaitingPanel listing={listing} />;
-  if (listing.phase === "ready") return <ReadyPanel listing={listing} onDrawn={onDrawn} />;
+  if (listing.phase === "ready") return <ReadyPanel listing={listing} onDraw={onDraw} />;
   return <SettledPanel listing={listing} />;
 }

@@ -19,10 +19,11 @@ import {
   tokenOf,
   type Listing,
 } from "@/lib/protocol/rounds";
+import { RoundStatus } from "@/lib/protocol/types";
 import { useProtocol } from "@/providers/protocol-context";
 
 import { REVEAL_MS, StaticField, type Reveal } from "./StaticField";
-import { TicketPanel } from "./TicketPanel";
+import { TicketPanel, type DrawEvents } from "./TicketPanel";
 
 const REVEAL_HOLD = 1.35;
 
@@ -35,11 +36,11 @@ function accentFor(symbol: string): string {
 function Stage({
   listing,
   reveal,
-  onDrawn,
+  onDraw,
 }: {
   listing: Listing;
   reveal: Reveal | null;
-  onDrawn: (reveal: Reveal) => void;
+  onDraw: DrawEvents;
 }) {
   const { protocol, account, now } = useProtocol();
   const { config, rewards, round, phase } = listing;
@@ -128,7 +129,7 @@ function Stage({
         </div>
       </section>
       <aside className="ticket" aria-label="Round action">
-        <TicketPanel listing={listing} reveal={reveal} onDrawn={onDrawn} />
+        <TicketPanel listing={listing} reveal={reveal} onDraw={onDraw} />
       </aside>
     </div>
   );
@@ -348,24 +349,68 @@ function HowItWorks() {
   );
 }
 
+type Selection = Readonly<{ key: string; version: bigint }>;
+
+/**
+ * A draw is followed from the click until its reveal ends. The result can reach the screen through
+ * the receipt or through the regular poll, and the reveal starts with whichever comes first.
+ */
+type Draw = Readonly<{ roundId: bigint; reveal: Reveal | null }>;
+
+// Kept outside the component so the selection survives a visit to another page.
+let rememberedSelection: Selection | null = null;
+
 export function RoundsView() {
-  const { listings } = useProtocol();
+  const { protocol, listings } = useProtocol();
   const params = useSearchParams();
   const router = useRouter();
   const requested = params.get("round");
-  const [selection, setSelection] = useState<{ key: string; version: bigint } | null>(null);
-  const [reveal, setReveal] = useState<Reveal | null>(null);
+  const [selection, setSelection] = useState<Selection | null>(() =>
+    requested === null ? rememberedSelection : null
+  );
+  const [draw, setDraw] = useState<Draw | null>(null);
+  const reveal = draw?.reveal ?? null;
+
+  useEffect(() => {
+    rememberedSelection = selection;
+  }, [selection]);
 
   useEffect(() => {
     if (!reveal) return;
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const hold = reduced ? 600 : REVEAL_MS * REVEAL_HOLD;
-    const timer = setTimeout(() => setReveal(null), hold);
+    const timer = setTimeout(() => setDraw(null), hold);
     return () => clearTimeout(timer);
   }, [reveal]);
 
-  // A channel's row changes key when its first buyer opens a round, so selection follows the
-  // channel. Otherwise fall back to the round in the URL, then the top of the list.
+  const drawn =
+    draw && !draw.reveal
+      ? protocol.rounds.find(
+          (round) => round.id === draw.roundId && round.status === RoundStatus.Settled
+        )
+      : undefined;
+  if (drawn) {
+    setDraw({
+      roundId: drawn.id,
+      reveal: { roundId: drawn.id, winner: drawn.winningTicket, startedAt: protocol.observedAtMs },
+    });
+  }
+
+  const onDraw: DrawEvents = {
+    started: (roundId) => setDraw({ roundId, reveal: null }),
+    drawn: (next) =>
+      setDraw((current) =>
+        current?.roundId === next.roundId && !current.reveal
+          ? { roundId: next.roundId, reveal: next }
+          : current
+      ),
+    failed: (roundId) =>
+      setDraw((current) => (current?.roundId === roundId && !current.reveal ? null : current)),
+  };
+
+  // The selection is whatever is on screen, so a draw or a new round elsewhere can't move it. A
+  // channel's row changes key when its first buyer opens a round, so selection follows the channel.
+  // Otherwise fall back to the round in the URL, then the top of the list.
   const selected =
     listings.find((listing) => listing.key === selection?.key) ??
     listings.find(
@@ -374,9 +419,7 @@ export function RoundsView() {
     listings.find((listing) => requested !== null && listing.key === `round-${requested}`) ??
     listings[0];
 
-  // Keep following the round once it exists. A drawn round's channel can reopen as an idle row, and
-  // that must not pull the viewer away from the result.
-  if (selection && selected && selected.key !== selection.key) {
+  if (selected && selected.key !== selection?.key) {
     setSelection({ key: selected.key, version: selected.version });
   }
 
@@ -390,7 +433,7 @@ export function RoundsView() {
 
   return (
     <>
-      <Stage listing={selected} reveal={reveal} onDrawn={setReveal} />
+      <Stage listing={selected} reveal={reveal} onDraw={onDraw} />
       <Split listing={selected} />
       <Channels
         selectedKey={selected.key}

@@ -1,13 +1,14 @@
 "use client";
 
 import { useQueryClient } from "@tanstack/react-query";
+import { usePathname } from "next/navigation";
 import { createContext, useCallback, useContext, useMemo, useRef, useState } from "react";
 import { encodeFunctionData, type Abi, type Address, type TransactionReceipt } from "viem";
 
 import { publicClient } from "@/lib/chain/client";
-import { explainError } from "@/lib/protocol/errors";
+import { explainError, rejectedByUser, revertReason } from "@/lib/protocol/errors";
 
-import { ACCOUNT_QUERY, PROTOCOL_QUERY } from "./protocol-context";
+import { PROTOCOL_QUERY } from "./protocol-context";
 import { useToast } from "./toast-context";
 import { useWalletState } from "./wallet-context";
 
@@ -42,6 +43,26 @@ export function useTx(): TxState {
   return useContext(TxContext);
 }
 
+type Simulation = Readonly<{
+  account: Address;
+  address: Address;
+  abi: Abi;
+  functionName: string;
+  args: unknown[];
+  value: bigint | undefined;
+}>;
+
+/** Replays a reverted call in its own block, where it fails again and names its reason. */
+async function revertedOnchain(simulation: Simulation, blockNumber: bigint): Promise<Error> {
+  try {
+    await publicClient.simulateContract({ ...simulation, blockNumber });
+  } catch (error) {
+    const reason = revertReason(error);
+    if (reason) return new Error(`${reason} Only gas was spent.`);
+  }
+  return new Error("The transaction reverted onchain. Only gas was spent.");
+}
+
 export function TxProvider({ children }: { children: React.ReactNode }) {
   const { address, sendTransaction } = useWalletState();
   const queryClient = useQueryClient();
@@ -49,6 +70,14 @@ export function TxProvider({ children }: { children: React.ReactNode }) {
   const [busy, setBusy] = useState<Readonly<Record<string, string>>>({});
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
   const running = useRef(new Set<string>());
+
+  // An error belongs to the page it happened on.
+  const pathname = usePathname();
+  const [errorsPath, setErrorsPath] = useState(pathname);
+  if (pathname !== errorsPath) {
+    setErrorsPath(pathname);
+    setErrors({});
+  }
 
   const mark = useCallback((key: string, label: string | null) => {
     setBusy((current) => {
@@ -72,15 +101,16 @@ export function TxProvider({ children }: { children: React.ReactNode }) {
       try {
         const call = await build();
         const { abi, functionName, args, value } = call;
-        // A simulated revert names the real reason before the wallet is ever opened.
-        await publicClient.simulateContract({
+        const simulation = {
           account: address,
           address: call.address,
           abi: abi as Abi,
           functionName,
           args: args as unknown[],
           value,
-        });
+        };
+        // A simulated revert names the real reason before the wallet is ever opened.
+        await publicClient.simulateContract(simulation);
         mark(key, "Confirm in wallet…");
         const hash = await sendTransaction({
           wallet: address,
@@ -92,17 +122,19 @@ export function TxProvider({ children }: { children: React.ReactNode }) {
         mark(key, options.pending ?? "Confirming…");
         const receipt = await publicClient.waitForTransactionReceipt({ hash });
         if (receipt.status !== "success") {
-          throw new Error("The transaction reverted onchain. Only gas was spent.");
+          throw await revertedOnchain(simulation, receipt.blockNumber);
         }
         options.onReceipt?.(receipt);
         // The button stays pending until the screen shows the confirmed state.
-        await Promise.all([
-          queryClient.refetchQueries({ queryKey: [PROTOCOL_QUERY] }),
-          queryClient.refetchQueries({ queryKey: [ACCOUNT_QUERY] }),
-        ]);
+        await queryClient.refetchQueries({ queryKey: [PROTOCOL_QUERY] });
         if (options.success) toast(options.success);
         return true;
       } catch (error) {
+        // Most failures mean the chain moved, such as another player drawing first. The screen
+        // catches up before the message appears beside it.
+        if (!rejectedByUser(error)) {
+          await queryClient.refetchQueries({ queryKey: [PROTOCOL_QUERY] });
+        }
         setErrors((current) => ({ ...current, [key]: explainError(error) }));
         return false;
       } finally {

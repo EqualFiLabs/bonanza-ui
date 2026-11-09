@@ -1,7 +1,8 @@
 import type { Address, PublicClient } from "viem";
 import { describe, expect, it, vi } from "vitest";
 
-import { loadTickets } from "@/lib/protocol/load";
+import { loadAccount, loadTickets } from "@/lib/protocol/load";
+import type { ProtocolSnapshot } from "@/lib/protocol/types";
 
 const owner: Address = "0x00000000000000000000000000000000000000a1";
 
@@ -63,5 +64,63 @@ describe("loadTickets", () => {
     getLogs.mockClear();
     await loadTickets(client, deployment, owner, 6_500n);
     expect(getLogs).toHaveBeenCalledWith(expect.objectContaining({ fromBlock: 6_000n }));
+  });
+});
+
+describe("loadAccount", () => {
+  it("reads every wallet value at the protocol snapshot's block", async () => {
+    const block = 777n;
+    const token: Address = "0x00000000000000000000000000000000000000b1";
+    const positionNFT: Address = "0x00000000000000000000000000000000000000b2";
+    const registry: Address = "0x00000000000000000000000000000000000000b3";
+    const lottery: Address = "0x00000000000000000000000000000000000000b4";
+    const results: Record<string, unknown> = {
+      positionCreationFee: 0n,
+      positionCount: 1n,
+      positionsOfOwner: [[5n], 1n],
+      balanceOf: 0n,
+      allowance: 0n,
+      finalizerCredit: 0n,
+      fiddyAccount: { balance: 0n, staked: 0n, weight: 0n, multiplierBps: 0n, registered: false },
+      indexedFiddyRevenue: [0n],
+      round: { drandRound: 1n },
+      fiddyRoundConfig: {},
+      fiddyRoundRevenue: 0n,
+      roundTime: 0n,
+    };
+    const readContract = vi.fn(async ({ functionName }: { functionName: string }) => {
+      return results[functionName];
+    });
+    const getBalance = vi.fn(async () => 0n);
+    // A purchase in a round outside the listed window, so its round is loaded too.
+    const getLogs = vi.fn(async () => [log(1, 9n, 0, 1)]);
+    const client = { readContract, getBalance, getLogs } as unknown as PublicClient;
+    const protocol = {
+      blockNumber: block,
+      tokens: { [token]: { address: token, symbol: "T", decimals: 18 } },
+      bindings: { positionNFT },
+      drandRegistry: registry,
+      revenueAssets: [token],
+      rounds: [],
+    } as unknown as ProtocolSnapshot;
+
+    await loadAccount(client, { chainId: 1, lottery, startBlock: 1n }, protocol, owner);
+
+    expect(getBalance).toHaveBeenCalledWith(expect.objectContaining({ blockNumber: block }));
+    expect(getLogs).toHaveBeenCalledWith(expect.objectContaining({ toBlock: block }));
+    // The drand registry's beacon time is fixed, so only its read may follow the latest block.
+    const reads = readContract.mock.calls
+      .map(([call]) => call as { address: Address; functionName: string; blockNumber?: bigint })
+      .filter((call) => call.address !== registry);
+    expect(reads.map((call) => call.functionName)).toEqual(
+      expect.arrayContaining([
+        "balanceOf",
+        "allowance",
+        "fiddyAccount",
+        "round",
+        "positionsOfOwner",
+      ])
+    );
+    for (const call of reads) expect(call.blockNumber, call.functionName).toBe(block);
   });
 });

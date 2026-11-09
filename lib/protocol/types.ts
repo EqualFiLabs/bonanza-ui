@@ -110,3 +110,6 @@ export type AccountSnapshot = Readonly<{
   olderRounds: readonly Round[];
   finalizerCredits: Readonly<Record<Address, bigint>>;
 }>;
+
+/** Protocol and wallet state read at one block, so a screen never mixes two moments. */
+export type Snapshot = Readonly<{ protocol: ProtocolSnapshot; account: AccountSnapshot | null }>;

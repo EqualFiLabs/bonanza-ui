@@ -43,7 +43,7 @@ const CONTRACT_ERRORS: Readonly<Record<string, string>> = {
 const REJECTED = "You rejected the request in your wallet. Nothing was spent.";
 const FALLBACK = "The transaction didn't go through. Nothing was spent.";
 
-function rejectedByUser(error: unknown): boolean {
+export function rejectedByUser(error: unknown): boolean {
   let current: unknown = error;
   for (let depth = 0; depth < 8 && current; depth += 1) {
     const candidate = current as { code?: unknown; message?: unknown; cause?: unknown };
@@ -59,17 +59,19 @@ function rejectedByUser(error: unknown): boolean {
   return false;
 }
 
+/** The contract's own reason for a revert in plain words, or null when the error names none. */
+export function revertReason(error: unknown): string | null {
+  if (!(error instanceof BaseError)) return null;
+  const revert = error.walk((cause) => cause instanceof ContractFunctionRevertedError);
+  if (!(revert instanceof ContractFunctionRevertedError)) return null;
+  const name = revert.data?.errorName;
+  if (name && CONTRACT_ERRORS[name]) return CONTRACT_ERRORS[name];
+  return revert.reason ?? null;
+}
+
 export function explainError(error: unknown): string {
   if (rejectedByUser(error)) return REJECTED;
-  if (error instanceof BaseError) {
-    const revert = error.walk((cause) => cause instanceof ContractFunctionRevertedError);
-    if (revert instanceof ContractFunctionRevertedError) {
-      const name = revert.data?.errorName;
-      if (name && CONTRACT_ERRORS[name]) return CONTRACT_ERRORS[name];
-      if (revert.reason) return revert.reason;
-    }
-    return FALLBACK;
-  }
+  if (error instanceof BaseError) return revertReason(error) ?? FALLBACK;
   // Wallet and app errors are written for people; anything else stays generic.
   if (
     error instanceof Error &&

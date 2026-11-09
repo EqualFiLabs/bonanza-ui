@@ -10,6 +10,7 @@ import type {
   Channel,
   ProtocolSnapshot,
   Round,
+  Snapshot,
   StakingAccount,
   Token,
 } from "./types";
@@ -160,9 +161,10 @@ export async function loadProtocol(
 async function loadPositionIds(
   client: PublicClient,
   positionNFT: Address,
-  owner: Address
+  owner: Address,
+  blockNumber: bigint
 ): Promise<bigint[]> {
-  const contract = { address: positionNFT, abi: positionAbi } as const;
+  const contract = { address: positionNFT, abi: positionAbi, blockNumber } as const;
   const count = await client.readContract({
     ...contract,
     functionName: "positionCount",
@@ -234,25 +236,31 @@ export async function loadTickets(
   return { ...scan.tickets };
 }
 
+/**
+ * Reads the wallet at the protocol snapshot's block. Mixing blocks would pair a new stake with the old
+ * total weight, or a new balance with tickets not yet scanned.
+ */
 export async function loadAccount(
   client: PublicClient,
   deployment: Deployment,
   protocol: ProtocolSnapshot,
   owner: Address
 ): Promise<AccountSnapshot> {
-  const lottery = { address: deployment.lottery, abi: lotteryAbi } as const;
+  const { blockNumber } = protocol;
+  const lottery = { address: deployment.lottery, abi: lotteryAbi, blockNumber } as const;
   const assets = Object.keys(protocol.tokens) as Address[];
 
   const [nativeBalance, positionCreationFee, ids, tickets, balances, allowances, credits] =
     await Promise.all([
-      client.getBalance({ address: owner }),
+      client.getBalance({ address: owner, blockNumber }),
       client.readContract({
         address: protocol.bindings.positionNFT,
         abi: positionAbi,
         functionName: "positionCreationFee",
+        blockNumber,
       }),
-      loadPositionIds(client, protocol.bindings.positionNFT, owner),
-      loadTickets(client, deployment, owner, protocol.blockNumber),
+      loadPositionIds(client, protocol.bindings.positionNFT, owner, blockNumber),
+      loadTickets(client, deployment, owner, blockNumber),
       Promise.all(
         assets.map((address) =>
           client.readContract({
@@ -260,6 +268,7 @@ export async function loadAccount(
             abi: erc20Abi,
             functionName: "balanceOf",
             args: [owner],
+            blockNumber,
           })
         )
       ),
@@ -270,6 +279,7 @@ export async function loadAccount(
             abi: erc20Abi,
             functionName: "allowance",
             args: [owner, deployment.lottery],
+            blockNumber,
           })
         )
       ),
@@ -289,7 +299,7 @@ export async function loadAccount(
     Object.keys(tickets)
       .map(BigInt)
       .filter((id) => !listed.has(id))
-      .map((id) => loadRound(client, deployment, protocol.drandRegistry, id))
+      .map((id) => loadRound(client, deployment, protocol.drandRegistry, id, blockNumber))
   );
 
   const positions: StakingAccount[] = await Promise.all(
@@ -336,4 +346,14 @@ export async function loadAccount(
     olderRounds,
     finalizerCredits: byAsset(credits),
   };
+}
+
+export async function loadSnapshot(
+  client: PublicClient,
+  deployment: Deployment,
+  owner: Address | null
+): Promise<Snapshot> {
+  const protocol = await loadProtocol(client, deployment);
+  const account = owner ? await loadAccount(client, deployment, protocol, owner) : null;
+  return { protocol, account };
 }

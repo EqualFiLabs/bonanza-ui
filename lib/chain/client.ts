@@ -24,7 +24,12 @@ export const forkDetails =
 export const usesForkWallet =
   forkDetails !== null && process.env.NEXT_PUBLIC_BONANZA_FORK_WALLET === "1";
 
+// Robinhood Chain makes a block about every 0.1 s. viem's default would check for a receipt every
+// 4 s, so the app would learn of its own transaction after its regular poll had already shown it.
+const RECEIPT_POLL_MS = 250;
+
 export const publicClient: PublicClient = createPublicClient({
   chain: targetChain,
+  pollingInterval: RECEIPT_POLL_MS,
   transport: createWalletTransports(walletEnvironment)[targetChain.id],
 });

@@ -23,7 +23,7 @@ export type WalletState = Readonly<{
   networkName: string;
   isTargetChain: boolean;
   error: string | null;
-  busyAction: "connect" | "create" | "switch" | null;
+  busyAction: "connect" | "create" | "switch" | "disconnect" | null;
   login: () => void;
   logout: () => void;
   createWallet: () => Promise<void>;

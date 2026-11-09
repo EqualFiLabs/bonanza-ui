@@ -12,7 +12,7 @@ import {
 import { createConfig, useSetActiveWallet, WagmiProvider } from "@privy-io/wagmi";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createWalletClient, custom, getAddress, type Address } from "viem";
-import { useAccount } from "wagmi";
+import { useAccount, useConnectors, useDisconnect } from "wagmi";
 
 import { targetChain, walletEnvironment } from "@/lib/chain/client";
 import { createWalletTransports } from "@/lib/wallet-config";
@@ -21,6 +21,7 @@ import {
   localForkWalletProvider,
   verifyLocalForkWalletProvider,
 } from "@/lib/wallet/local-fork";
+import { signOutEverywhere } from "@/lib/wallet/disconnection";
 import { recoverPrivyWallet } from "@/lib/wallet/reconnection";
 import { selectActiveWallet } from "@/lib/wallet/selection";
 
@@ -44,6 +45,8 @@ function WalletBridge({ children }: { children: React.ReactNode }) {
   const { createWallet } = useCreateWallet();
   const { sendTransaction: sendEmbeddedTransaction } = useSendTransaction();
   const wagmiAccount = useAccount();
+  const connectors = useConnectors();
+  const { disconnectAsync } = useDisconnect();
   const { setActiveWallet } = useSetActiveWallet();
   const [busyAction, setBusyAction] = useState<WalletState["busyAction"]>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -171,7 +174,18 @@ function WalletBridge({ children }: { children: React.ReactNode }) {
       error: actionError ?? privyError?.message ?? null,
       busyAction,
       login: () => login({ loginMethods: ["email", "wallet"] }),
-      logout: () => void logout(),
+      logout: () =>
+        void runAction("disconnect", () =>
+          signOutEverywhere({
+            wallets,
+            disconnectConnectors: async () => {
+              for (const connector of connectors) {
+                await disconnectAsync({ connector }).catch(() => undefined);
+              }
+            },
+            logout,
+          })
+        ),
       createWallet: () =>
         runAction("create", async () => {
           await recoverPrivyWallet({
@@ -199,7 +213,9 @@ function WalletBridge({ children }: { children: React.ReactNode }) {
       authenticated,
       busyAction,
       chainId,
+      connectors,
       createWallet,
+      disconnectAsync,
       embeddedWallet,
       login,
       logout,
@@ -210,6 +226,7 @@ function WalletBridge({ children }: { children: React.ReactNode }) {
       setActiveWallet,
       status,
       walletKind,
+      wallets,
     ]
   );
 

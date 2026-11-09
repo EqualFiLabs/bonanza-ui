@@ -3,8 +3,21 @@ import { resolve } from "node:path";
 
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
-import { createPublicClient, erc20Abi, http, parseEther, parseUnits, type Address } from "viem";
+import {
+  createPublicClient,
+  encodeFunctionData,
+  erc20Abi,
+  http,
+  numberToHex,
+  parseAbi,
+  parseEther,
+  parseGwei,
+  parseUnits,
+  type Address,
+  type Hex,
+} from "viem";
 
+import { fetchBeacon } from "@/lib/chain/drand";
 import { lotteryAbi } from "@/lib/contracts/generated/lottery";
 
 // Every flow here drives the real Lottery, Statics position contracts, Operator Router and the live
@@ -16,6 +29,7 @@ const client = createPublicClient({
 });
 const lottery = { address: deployment.lottery as Address, abi: lotteryAbi };
 const wallet: Address = deployment.actors.dave;
+const alice: Address = deployment.actors.alice;
 const weth: Address = deployment.weth;
 const statics: Address = deployment.staticsToken;
 
@@ -63,6 +77,86 @@ async function openTools(page: Page) {
 async function goTo(page: Page, label: string) {
   await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: label }).click();
 }
+
+const BLOCK_SECONDS = 2;
+const rpc = (method: string, params: unknown[] = []) =>
+  client.request({ method: method as never, params: params as never });
+
+/** Sends from an unlocked fork account. Priority fees put it ahead of others in the same block. */
+async function sendAs(from: Address, to: Address, data: Hex, value = 0n, priority = false) {
+  const fees = priority
+    ? {
+        maxPriorityFeePerGas: numberToHex(parseGwei("50")),
+        maxFeePerGas: numberToHex(parseGwei("200")),
+      }
+    : {};
+  return (await rpc("eth_sendTransaction", [
+    { from, to, data, value: numberToHex(value), ...fees },
+  ])) as Hex;
+}
+
+async function confirmedAs(from: Address, to: Address, data: Hex, value = 0n) {
+  const hash = await sendAs(from, to, data, value);
+  const receipt = await client.waitForTransactionReceipt({ hash, pollingInterval: 100 });
+  expect(receipt.status).toBe("success");
+}
+
+/** Holds the fork's blocks while `act` runs, so everything it sends lands in one block. */
+async function inOneBlock(act: () => Promise<void>) {
+  await rpc("evm_setIntervalMining", [0]);
+  try {
+    await act();
+    await rpc("evm_mine");
+  } finally {
+    await rpc("evm_setIntervalMining", [BLOCK_SECONDS]);
+  }
+}
+
+type Frame = Record<string, string>;
+
+/**
+ * Records every distinct state of the named regions until the returned function stops it. Polls
+ * can change the screen between two assertions, so these checks cover everything that was shown.
+ * Text is kept in lower case, since some labels are styled in capitals.
+ */
+async function record(page: Page, regions: Frame): Promise<() => Promise<Frame[]>> {
+  await page.evaluate((selectors) => {
+    const frames: Record<string, string>[] = [];
+    let last = "";
+    const capture = () => {
+      const frame = Object.fromEntries(
+        Object.entries(selectors).map(([name, selector]) => [
+          name,
+          [...document.querySelectorAll<HTMLElement>(selector)]
+            .map((element) => element.innerText.replace(/\s+/g, " ").trim().toLowerCase())
+            .join(" | "),
+        ])
+      );
+      const text = JSON.stringify(frame);
+      if (text !== last) {
+        last = text;
+        frames.push(frame);
+      }
+    };
+    capture();
+    const observer = new MutationObserver(capture);
+    observer.observe(document.body, { subtree: true, childList: true, characterData: true });
+    Object.assign(window, { recording: { frames, stop: () => observer.disconnect() } });
+  }, regions);
+  return () =>
+    page.evaluate(() => {
+      const { recording } = window as unknown as {
+        recording: { frames: Record<string, string>[]; stop: () => void };
+      };
+      recording.stop();
+      return recording.frames;
+    });
+}
+
+const amount = (text: string, label: string) =>
+  Number(new RegExp(`${label} ([\\d,]+\\.\\d+)`, "i").exec(text)![1].replaceAll(",", ""));
+
+const stageTitle = (page: Page) => page.locator('[aria-label="Selected round"] .eyebrow');
 
 test.describe.serial("real contracts on a mainnet fork", () => {
   let page: Page;
@@ -113,16 +207,30 @@ test.describe.serial("real contracts on a mainnet fork", () => {
       })
     ).toBe(parseEther("0.05"));
 
+    const stop = await record(page, {
+      balance: '[aria-label="Round action"] .stub-balance',
+      held: ".stage-foot",
+      action: '[aria-label="Round action"] .btn',
+      toast: ".toasts",
+    });
     await buy.click();
     await expect(page.getByText("Bought 5 tickets")).toBeVisible();
+    const frames = await stop();
+    for (const frame of frames) {
+      // The purchase appears all at once, and the button stays on it until it's done.
+      if (frame.balance !== frames[0].balance) expect(frame.held).toContain("#0113–#0117");
+      if (!frame.toast.includes("bought")) expect(frame.action).not.toMatch(/^approve/);
+    }
     expect(before - (await balanceOf(weth))).toBe(parseEther("0.05"));
     expect((await account()).balance).toBe(parseEther("500"));
     await expect(page.getByText(/You hold/)).toContainText("#0113–#0117");
 
+    const shown = await stageTitle(page).textContent();
     await goTo(page, "My tickets");
     await expect(page.locator(".trow")).toContainText("#0113–#0117");
     await goTo(page, "Rounds");
     await expect(page.getByRole("heading", { name: "On air" })).toBeVisible();
+    await expect(stageTitle(page)).toHaveText(shown!);
   });
 
   test("explains a rejected wallet request beside the action", async () => {
@@ -137,6 +245,16 @@ test.describe.serial("real contracts on a mainnet fork", () => {
       "You rejected the request in your wallet. Nothing was spent."
     );
     await expect(panel(page).getByRole("button", { name: /Approve/ })).toBeEnabled();
+
+    // The error stays with its own round and its own page.
+    await channel(page, "Ready to open").click();
+    await expect(panel(page).getByRole("button", { name: /^Approve/ })).toBeVisible();
+    await expect(panel(page).getByRole("alert")).toHaveCount(0);
+    await goTo(page, "My tickets");
+    await goTo(page, "Rounds");
+    await channel(page, "0.0100 WETH").click();
+    await expect(panel(page).getByRole("button", { name: /Approve/ })).toBeEnabled();
+    await expect(panel(page).getByRole("alert")).toHaveCount(0);
   });
 
   test("draws a sold-out round with a genuine beacon and pays the tip", async () => {
@@ -147,6 +265,7 @@ test.describe.serial("real contracts on a mainnet fork", () => {
       .getByRole("button", { name: /Draw round/ })
       .click();
     await expect(panel(page).getByText("Signal")).toBeVisible();
+    await expect(page.getByText("Round 2 drawn. Your tip is in Claims.")).toBeVisible();
     await expect(panel(page).getByText("Check the math")).toBeVisible();
 
     const drawn = await client.readContract({ ...lottery, functionName: "round", args: [2n] });
@@ -165,12 +284,21 @@ test.describe.serial("real contracts on a mainnet fork", () => {
     await expect(page.getByRole("heading", { name: "On air" })).toBeVisible();
   });
 
-  test("opens a round, sells it out alone, wins and claims", async () => {
+  test("opens a round, sells it out alone, loses the draw race, wins and claims", async () => {
     await channel(page, /(^|[^\d,])5\.00 STATICS/).click();
     await panel(page).getByRole("button", { name: "Max 30" }).click();
     await panel(page).getByRole("button", { name: "Approve 150.00 STATICS" }).click();
+    const stop = await record(page, {
+      balance: '[aria-label="Round action"] .stub-balance',
+      held: ".stage-foot",
+    });
     await panel(page).getByRole("button", { name: "Open round · buy 30 tickets" }).click();
     await expect(page.getByText("Bought 30 tickets")).toBeVisible();
+    const opened = await stop();
+    for (const frame of opened) {
+      // The new round never shows as paid for without the tickets bought.
+      if (frame.balance !== opened[0].balance) expect(frame.held).toContain("#0001–#0030");
+    }
     await expect(page.getByText(/You hold/)).toContainText("#0001–#0030");
 
     const roundId = await client.readContract({ ...lottery, functionName: "latestRoundId" });
@@ -189,16 +317,38 @@ test.describe.serial("real contracts on a mainnet fork", () => {
           .click();
       }
     }
-    await draw.click();
+    // Another player posts the beacon too, and both draws land in one block with theirs first.
+    await expect(draw).toBeVisible();
+    const { signature } = await fetchBeacon(sold.drandRound);
+    await inOneBlock(async () => {
+      const settle = encodeFunctionData({
+        abi: lotteryAbi,
+        functionName: "settleRound",
+        args: [roundId, signature],
+      });
+      await sendAs(alice, lottery.address, settle, 0n, true);
+      await draw.click();
+      await expect(panel(page).getByRole("button", { name: "Posting beacon…" })).toBeVisible();
+    });
+    await expect(page.getByText(`Someone else drew round ${roundId} first.`)).toBeVisible();
     await expect(panel(page).getByRole("heading", { name: "You won" })).toBeVisible();
 
     const won = await client.readContract({ ...lottery, functionName: "round", args: [roundId] });
     expect(won.winner.toLowerCase()).toBe(wallet.toLowerCase());
     expect(won.winnerClaimable).toBe(parseEther("75"));
+    const aliceTip = await client.readContract({
+      ...lottery,
+      functionName: "finalizerCredit",
+      args: [statics, alice],
+    });
+    expect(aliceTip).toBeGreaterThan(0n);
 
-    await goTo(page, "Claims");
+    // The claim link moves within the app, so the wallet session carries over.
+    await page.evaluate(() => Object.assign(window, { sameDocument: true }));
+    await panel(page).getByRole("link", { name: "Claim 75.00 STATICS" }).click();
     const claim = page.locator(".claim", { hasText: "Winner" });
     await expect(claim).toContainText("75.00 STATICS");
+    expect(await page.evaluate(() => "sameDocument" in window)).toBe(true);
 
     await claim.getByRole("button", { name: "Send elsewhere" }).click();
     await claim.getByLabel("Receiver").fill("someone.eth");
@@ -207,8 +357,13 @@ test.describe.serial("real contracts on a mainnet fork", () => {
     const receiver: Address = deployment.actors.recipient;
     await claim.getByLabel("Receiver").fill(receiver);
     const before = await balanceOf(statics, receiver);
+    const stopRows = await record(page, { rows: ".claim", toast: ".toasts" });
     await claim.getByRole("button", { name: "Claim", exact: true }).click();
     await expect(page.getByText("Claimed 75.00 STATICS")).toBeVisible();
+    for (const frame of await stopRows()) {
+      // The row leaves together with its confirmation, not before it.
+      if (!frame.rows.includes("winner")) expect(frame.toast).toContain("claimed 75.00 statics");
+    }
     expect((await balanceOf(statics, receiver)) - before).toBe(parseEther("75"));
     await expect(page.locator(".claim", { hasText: "Winner" })).toHaveCount(0);
   });
@@ -218,8 +373,20 @@ test.describe.serial("real contracts on a mainnet fork", () => {
     await expect(page.getByRole("heading", { name: "Stake" })).toBeVisible();
     await page.getByLabel("BONA amount").fill("100");
     await expect(page.getByText("in 24h 00m")).toBeVisible();
+    const stop = await record(page, {
+      stake: '[aria-label="Stake"] .stats',
+      reserve: '[aria-label="Reward reserve"]',
+    });
     await page.getByRole("button", { name: "Stake 100.00 BONA" }).click();
     await expect(page.getByText("Staked 100.00 BONA")).toBeVisible();
+    const frames = await stop();
+    const others = (frame: Frame) =>
+      amount(frame.reserve, "total staked weight") - amount(frame.stake, "revenue weight");
+    for (const frame of frames) {
+      // Everyone else's weight can't move when this position stakes, so no frame mixes two blocks.
+      expect(Math.abs(others(frame) - others(frames[0]))).toBeLessThanOrEqual(0.01);
+      expect(amount(frame.stake, "share of stakers")).toBeLessThanOrEqual(100);
+    }
     expect((await account()).staked).toBe(parseEther("100"));
 
     await page.getByRole("button", { name: "Unstake", exact: true }).click();
@@ -290,12 +457,26 @@ test.describe.serial("real contracts on a mainnet fork", () => {
     await expect(page.getByText("New exposure is paused.")).toHaveCount(0);
   });
 
-  test("runs deadline draws for rounds that didn't sell out", async () => {
-    await channel(page, "Deadline draw ready").click();
+  test("runs a deadline draw on the default round, reveals it and stays on it", async () => {
+    // A reload keeps the wallet signed in and starts again from the default round.
+    await page.reload();
+    await expect(page.getByRole("heading", { name: "On air" })).toBeVisible();
+    await expect(stageTitle(page)).toContainText("Round 3");
+    const stop = await record(page, {
+      stage: '[aria-label="Selected round"] .eyebrow',
+      panel: '[aria-label="Round action"] .eyebrow',
+    });
     await panel(page)
       .getByRole("button", { name: /Draw round/ })
       .click();
+    await expect(page.getByText(/^Round 3 drawn\./)).toBeVisible();
     await expect(panel(page).getByText("Check the math")).toBeVisible();
+    const frames = await stop();
+    expect(frames.every((frame) => frame.stage.includes("round 3"))).toBe(true);
+    const steps = frames
+      .map((frame) => frame.panel.split(" · ")[0])
+      .filter((step, index, all) => step !== all[index - 1]);
+    expect(steps).toEqual(["deadline draw ready", "drawing", "drawn"]);
     const round = await client.readContract({ ...lottery, functionName: "round", args: [3n] });
     expect(round.status).toBe(3);
     expect(round.soldTickets).toBe(7);
@@ -324,6 +505,48 @@ test.describe.serial("real contracts on a mainnet fork", () => {
     await conversions.getByRole("button", { name: "Wrap 25.00 STATICS" }).click();
     await expect(page.getByText("Wrapped 25.00 STATICS")).toBeVisible();
     expect((await account()).balance - balance).toBe(parseEther("25"));
+  });
+
+  test("explains a round someone else opened first and keeps the ticket count", async () => {
+    const deposit = encodeFunctionData({
+      abi: parseAbi(["function deposit() payable"]),
+      functionName: "deposit",
+    });
+    await confirmedAs(alice, weth, deposit, parseEther("1"));
+    await confirmedAs(
+      alice,
+      weth,
+      encodeFunctionData({
+        abi: erc20Abi,
+        functionName: "approve",
+        args: [lottery.address, parseEther("1")],
+      })
+    );
+
+    await goTo(page, "Rounds");
+    await channel(page, "0.0010 WETH").click();
+    await expect(stageTitle(page)).toHaveText("Ch 04");
+    await panel(page).getByLabel("Number of tickets").fill("6");
+    await panel(page).getByRole("button", { name: "Approve 0.0060 WETH" }).click();
+    const open = panel(page).getByRole("button", { name: "Open round · buy 6 tickets" });
+    await expect(open).toBeVisible();
+
+    await inOneBlock(async () => {
+      const openRound = encodeFunctionData({
+        abi: lotteryAbi,
+        functionName: "openRound",
+        args: [4n, 8],
+      });
+      await sendAs(alice, lottery.address, openRound, 0n, true);
+      await open.click();
+      await expect(panel(page).getByRole("button", { name: "Buying…" })).toBeVisible();
+    });
+    await expect(panel(page).getByRole("alert")).toHaveText(
+      "Someone just opened this round. Buy into it instead. Only gas was spent."
+    );
+    await expect(page.locator(".stage-foot")).toContainText("8 of 20 sold");
+    await expect(panel(page).getByLabel("Number of tickets")).toHaveValue("6");
+    await expect(panel(page).getByRole("button", { name: "Buy 6 tickets" })).toBeEnabled();
   });
 
   test("fits small screens and passes an accessibility scan", async () => {

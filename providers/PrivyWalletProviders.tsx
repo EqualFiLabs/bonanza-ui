@@ -105,7 +105,9 @@ function WalletBridge({ children }: { children: React.ReactNode }) {
       }
 
       const provider = await selectedWallet.getEthereumProvider();
-      if (localFork) await verifyLocalForkWalletProvider(provider);
+      if (localFork) {
+        await verifyLocalForkWalletProvider(provider, walletEnvironment.anvilRpcUrl);
+      }
 
       if (walletKind === "embedded") {
         const localParameters = localFork

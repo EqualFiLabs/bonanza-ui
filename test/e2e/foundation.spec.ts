@@ -9,7 +9,7 @@ test("fails closed where Bonanza isn't deployed", async ({ page }) => {
   for (const route of routes) {
     await page.goto(route);
     await expect(page.getByRole("heading", { name: "Not live yet" })).toBeVisible();
-    await expect(page.getByRole("link", { name: "Bonanza" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Bonanza", exact: true })).toBeVisible();
   }
   expect(failures).toEqual([]);
 });

@@ -41,8 +41,8 @@ async function loadToken(client: PublicClient, address: Address, lottery: Addres
     client.readContract({ address, abi: erc20Abi, functionName: "symbol" }),
     client.readContract({ address, abi: erc20Abi, functionName: "decimals" }),
   ]);
-  // The Lottery is itself the reward token, and the contract source still names it FIDDY.
-  const token = { address, symbol: address === lottery ? "BONA" : symbol, decimals };
+  // The Lottery is itself the BONANZA reward token.
+  const token = { address, symbol: address === lottery ? "BONANZA" : symbol, decimals };
   tokenCache.set(address, token);
   return token;
 }
@@ -57,8 +57,8 @@ async function loadRound(
   const read = { address: deployment.lottery, abi: lotteryAbi, blockNumber } as const;
   const [round, rewards, stakerBooked] = await Promise.all([
     client.readContract({ ...read, functionName: "round", args: [id] }),
-    client.readContract({ ...read, functionName: "fiddyRoundConfig", args: [id] }),
-    client.readContract({ ...read, functionName: "fiddyRoundRevenue", args: [id] }),
+    client.readContract({ ...read, functionName: "bonanzaRoundConfig", args: [id] }),
+    client.readContract({ ...read, functionName: "bonanzaRoundRevenue", args: [id] }),
   ]);
   const beaconAt = await client.readContract({
     address: drandRegistry,
@@ -91,10 +91,10 @@ export async function loadProtocol(
     client.readContract({ ...read, functionName: "paused" }),
     client.readContract({ ...read, functionName: "latestRoundId" }),
     client.readContract({ ...read, functionName: "latestLotteryConfigVersion" }),
-    client.readContract({ ...read, functionName: "fiddyBindings" }),
-    client.readContract({ ...read, functionName: "fiddyReserve" }),
-    client.readContract({ ...read, functionName: "fiddyStaking" }),
-    client.readContract({ ...read, functionName: "fiddyRevenueAssets" }),
+    client.readContract({ ...read, functionName: "bonanzaBindings" }),
+    client.readContract({ ...read, functionName: "bonanzaReserve" }),
+    client.readContract({ ...read, functionName: "bonanzaStaking" }),
+    client.readContract({ ...read, functionName: "bonanzaRevenueAssets" }),
     client.readContract({ ...read, functionName: "currentIntegration" }),
   ]);
   const drandRegistry = integration[0].drandRegistry;
@@ -103,7 +103,7 @@ export async function loadProtocol(
     range(1n, latestVersion).map(async (version) => {
       const [[config, enabled], rewards, activeRoundId] = await Promise.all([
         client.readContract({ ...read, functionName: "lotteryConfig", args: [version] }),
-        client.readContract({ ...read, functionName: "fiddyConfig", args: [version] }),
+        client.readContract({ ...read, functionName: "bonanzaConfig", args: [version] }),
         client.readContract({ ...read, functionName: "activeRoundForConfig", args: [version] }),
       ]);
       return { version, config, rewards, enabled, activeRoundId };
@@ -305,12 +305,12 @@ export async function loadAccount(
   const positions: StakingAccount[] = await Promise.all(
     ids.map(async (id) => {
       const [account, revenue] = await Promise.all([
-        client.readContract({ ...lottery, functionName: "fiddyAccount", args: [id] }),
+        client.readContract({ ...lottery, functionName: "bonanzaAccount", args: [id] }),
         Promise.all(
           protocol.revenueAssets.map((asset) =>
             client.readContract({
               ...lottery,
-              functionName: "indexedFiddyRevenue",
+              functionName: "indexedBonanzaRevenue",
               args: [id, asset],
             })
           )

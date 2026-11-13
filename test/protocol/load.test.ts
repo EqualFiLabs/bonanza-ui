@@ -81,11 +81,11 @@ describe("loadAccount", () => {
       balanceOf: 0n,
       allowance: 0n,
       finalizerCredit: 0n,
-      fiddyAccount: { balance: 0n, staked: 0n, weight: 0n, multiplierBps: 0n, registered: false },
-      indexedFiddyRevenue: [0n],
+      bonanzaAccount: { balance: 0n, staked: 0n, weight: 0n, multiplierBps: 0n, registered: false },
+      indexedBonanzaRevenue: [0n],
       round: { drandRound: 1n },
-      fiddyRoundConfig: {},
-      fiddyRoundRevenue: 0n,
+      bonanzaRoundConfig: {},
+      bonanzaRoundRevenue: 0n,
       roundTime: 0n,
     };
     const readContract = vi.fn(async ({ functionName }: { functionName: string }) => {
@@ -116,7 +116,7 @@ describe("loadAccount", () => {
       expect.arrayContaining([
         "balanceOf",
         "allowance",
-        "fiddyAccount",
+        "bonanzaAccount",
         "round",
         "positionsOfOwner",
       ])

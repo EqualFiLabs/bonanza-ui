@@ -33,7 +33,7 @@ describe("explainError", () => {
 
   it("gives every contract error a user can trigger its own text", () => {
     const fallback = explainError(new BaseError("unknown"));
-    const names = ["RoundExpired", "TicketLimitExceeded", "InsufficientFiddy"] as const;
+    const names = ["RoundExpired", "TicketLimitExceeded", "InsufficientBonanza"] as const;
     for (const errorName of names) {
       const args = errorName === "RoundExpired" ? ([1n] as const) : undefined;
       const data = encodeErrorResult({ abi: lotteryAbi, errorName, args } as never);

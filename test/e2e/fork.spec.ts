@@ -62,7 +62,7 @@ async function positionId(): Promise<bigint> {
 }
 
 const account = async () =>
-  client.readContract({ ...lottery, functionName: "fiddyAccount", args: [await positionId()] });
+  client.readContract({ ...lottery, functionName: "bonanzaAccount", args: [await positionId()] });
 
 const channel = (page: Page, text: string | RegExp) =>
   page.locator(".ch", { hasText: text }).first();
@@ -369,16 +369,16 @@ test.describe.serial("real contracts on a mainnet fork", () => {
   });
 
   test("stakes, boosts, earns revenue, then unstakes after the lock", async () => {
-    await goTo(page, "BONA");
+    await goTo(page, "BONANZA");
     await expect(page.getByRole("heading", { name: "Stake" })).toBeVisible();
-    await page.getByLabel("BONA amount").fill("100");
+    await page.getByLabel("BONANZA amount").fill("100");
     await expect(page.getByText("in 24h 00m")).toBeVisible();
     const stop = await record(page, {
       stake: '[aria-label="Stake"] .stats',
       reserve: '[aria-label="Reward reserve"]',
     });
-    await page.getByRole("button", { name: "Stake 100.00 BONA" }).click();
-    await expect(page.getByText("Staked 100.00 BONA")).toBeVisible();
+    await page.getByRole("button", { name: "Stake 100.00 BONANZA" }).click();
+    await expect(page.getByText("Staked 100.00 BONANZA")).toBeVisible();
     const frames = await stop();
     const others = (frame: Frame) =>
       amount(frame.reserve, "total staked weight") - amount(frame.stake, "revenue weight");
@@ -414,7 +414,7 @@ test.describe.serial("real contracts on a mainnet fork", () => {
       .click();
     await expect(page.getByText(/^Bought \d+ tickets?$/)).toBeVisible();
 
-    await goTo(page, "BONA");
+    await goTo(page, "BONANZA");
     const revenue = page.getByRole("region", { name: "Revenue" });
     const statement = revenue.locator(".listrow", { hasText: "STATICS" });
     const before = await balanceOf(statics);
@@ -426,9 +426,9 @@ test.describe.serial("real contracts on a mainnet fork", () => {
     await page.getByRole("button", { name: "Skip 24 hours" }).click();
     await expect(page.getByText("Unlocked. You can unstake at any time.")).toBeVisible();
     await page.getByRole("button", { name: "Unstake", exact: true }).click();
-    await page.getByLabel("BONA amount").fill("40");
-    await page.getByRole("button", { name: "Unstake 40.00 BONA" }).click();
-    await expect(page.getByText("Unstaked 40.00 BONA")).toBeVisible();
+    await page.getByLabel("BONANZA amount").fill("40");
+    await page.getByRole("button", { name: "Unstake 40.00 BONANZA" }).click();
+    await expect(page.getByText("Unstaked 40.00 BONANZA")).toBeVisible();
     expect((await account()).staked).toBe(parseEther("60"));
 
     await page.getByRole("button", { name: "Remove boost" }).click();
@@ -442,8 +442,8 @@ test.describe.serial("real contracts on a mainnet fork", () => {
     await openTools(page);
     await page.getByLabel("Pause the protocol").click();
     await expect(page.getByText("New exposure is paused.")).toBeVisible();
-    await page.getByLabel("BONA amount").fill("1");
-    await expect(page.getByRole("button", { name: "Unstake 1.00 BONA" })).toBeEnabled();
+    await page.getByLabel("BONANZA amount").fill("1");
+    await expect(page.getByRole("button", { name: "Unstake 1.00 BONANZA" })).toBeEnabled();
     await page.getByRole("button", { name: "Stake", exact: true }).click();
     await expect(page.getByRole("button", { name: "Staking is paused" })).toBeDisabled();
 
@@ -484,7 +484,7 @@ test.describe.serial("real contracts on a mainnet fork", () => {
   });
 
   test("opens conversions when governance enables them", async () => {
-    await goTo(page, "BONA");
+    await goTo(page, "BONANZA");
     const conversions = page.getByRole("region", { name: "Conversions" });
     await expect(conversions.getByText("CLOSED")).toHaveCount(2);
     await expect(page.getByText(/no market price/)).toBeVisible();
@@ -492,10 +492,10 @@ test.describe.serial("real contracts on a mainnet fork", () => {
     await openTools(page);
     await page.getByLabel("Open unwrap").click();
     await expect(page.getByText(/Redeems 1:1/)).toBeVisible();
-    await conversions.getByLabel("BONA to unwrap").fill("10");
+    await conversions.getByLabel("BONANZA to unwrap").fill("10");
     const before = await balanceOf(statics);
-    await conversions.getByRole("button", { name: "Unwrap 10.00 BONA" }).click();
-    await expect(page.getByText("Unwrapped 10.00 BONA")).toBeVisible();
+    await conversions.getByRole("button", { name: "Unwrap 10.00 BONANZA" }).click();
+    await expect(page.getByText("Unwrapped 10.00 BONANZA")).toBeVisible();
     expect((await balanceOf(statics)) - before).toBe(parseEther("10"));
 
     await page.getByLabel("Open public wrap").click();
@@ -550,7 +550,7 @@ test.describe.serial("real contracts on a mainnet fork", () => {
   });
 
   test("fits small screens and passes an accessibility scan", async () => {
-    for (const route of ["Rounds", "My tickets", "BONA", "Claims"]) {
+    for (const route of ["Rounds", "My tickets", "BONANZA", "Claims"]) {
       await goTo(page, route);
       await page.waitForTimeout(500);
       for (const width of [1440, 390, 320]) {

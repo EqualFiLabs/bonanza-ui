@@ -223,9 +223,9 @@ async function deployLottery(owner, guardian, treasury, router, bindings) {
     "ClaimsFacet",
     "RevenueFacet",
     "LotteryViewFacet",
-    "FiddyTokenFacet",
-    "FiddyStakingFacet",
-    "FiddyViewFacet",
+    "BonanzaTokenFacet",
+    "BonanzaStakingFacet",
+    "BonanzaViewFacet",
   ];
   const facets = {};
   for (const name of names) facets[name] = await deploy(owner, "lottery", name);
@@ -256,7 +256,7 @@ async function deployLottery(owner, guardian, treasury, router, bindings) {
   };
   const data = encodeFunctionData({
     abi: init.abi,
-    functionName: "initializeWithFiddy",
+    functionName: "initializeWithBonanza",
     args: [params, bindings],
   });
   const receipt = await send(owner, lottery, "diamondCut", [cuts, init.address, data]);
@@ -360,7 +360,7 @@ async function seedFunds(context) {
 
   await send(actors.alice, statics, "approve", [lottery.address, maxUint256]);
   await send(holder, statics, "transfer", [actors.alice, 200_000n * WAD]);
-  await send(actors.alice, lottery, "fundFiddyReserve", [200_000n * WAD]);
+  await send(actors.alice, lottery, "fundBonanzaReserve", [200_000n * WAD]);
   return holder;
 }
 
@@ -403,8 +403,8 @@ async function seedRounds(context) {
   await drawRound(lottery, registry, firstRound, carol);
 
   step("Staking the participation rewards");
-  await send(alice, lottery, "stakeFiddy", [positions[alice], 200n * WAD]);
-  await send(bob, lottery, "stakeFiddy", [positions[bob], 120n * WAD]);
+  await send(alice, lottery, "stakeBonanza", [positions[alice], 200n * WAD]);
+  await send(bob, lottery, "stakeBonanza", [positions[bob], 120n * WAD]);
 
   step("Seeding rounds waiting for a draw");
   const soldOut = await createRound(
@@ -518,9 +518,9 @@ async function main() {
   step("Registering payment tokens through the Router timelock");
   await registerRouterAssets(owner, router, timelock, [dependencies.statics, dependencies.weth]);
   await send(owner, position, "setExternalModule", [lottery.address, ACCOUNT_MODULE, true]);
-  await send(owner, lottery, "setFiddyBoostsEnabled", [true]);
+  await send(owner, lottery, "setBonanzaBoostsEnabled", [true]);
 
-  const statics = artifactContract("lottery", "FiddyTokenFacet", dependencies.statics);
+  const statics = artifactContract("lottery", "BonanzaTokenFacet", dependencies.statics);
   const weth = {
     address: dependencies.weth,
     abi: [

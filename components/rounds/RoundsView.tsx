@@ -30,7 +30,7 @@ const REVEAL_HOLD = 1.35;
 function accentFor(symbol: string): string {
   if (symbol === "WETH") return "--weth";
   if (symbol === "STATICS") return "--statics";
-  return "--bona";
+  return "--bonanza";
 }
 
 function Stage({
@@ -156,7 +156,7 @@ function Split({ listing }: { listing: Listing }) {
       note: "through the Operator Router",
     },
     {
-      name: "BONA stakers",
+      name: "BONANZA stakers",
       amount: allocation.staker,
       color: "var(--win)",
       note: "booked at each purchase",

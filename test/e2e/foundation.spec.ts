@@ -1,7 +1,7 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
-const routes = ["/", "/tickets", "/bona", "/claims"];
+const routes = ["/", "/tickets", "/bonanza", "/claims"];
 
 test("fails closed where Bonanza isn't deployed", async ({ page }) => {
   const failures: string[] = [];
@@ -9,7 +9,7 @@ test("fails closed where Bonanza isn't deployed", async ({ page }) => {
   for (const route of routes) {
     await page.goto(route);
     await expect(page.getByRole("heading", { name: "Not live yet" })).toBeVisible();
-    await expect(page.getByRole("link", { name: "Bonanza" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Bonanza", exact: true })).toBeVisible();
   }
   expect(failures).toEqual([]);
 });

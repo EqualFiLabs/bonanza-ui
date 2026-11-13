@@ -71,7 +71,7 @@ export async function setConversions(
     lottery,
     encodeFunctionData({
       abi: lotteryAbi,
-      functionName: "setFiddyConversions",
+      functionName: "setBonanzaConversions",
       args: [wrap, unwrap, cap],
     })
   );

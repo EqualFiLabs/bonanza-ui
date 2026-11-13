@@ -1,7 +1,7 @@
 import { BaseError, ContractFunctionRevertedError, UserRejectedRequestError } from "viem";
 
 const CONTRACT_ERRORS: Readonly<Record<string, string>> = {
-  AccountNotEmpty: "This account still holds BONA or unclaimed revenue.",
+  AccountNotEmpty: "This account still holds BONANZA or unclaimed revenue.",
   ActiveRoundLimitReached: "The maximum number of live rounds is running. Try again after a draw.",
   ConfigAlreadyActive: "Someone just opened this round. Buy into it instead.",
   ConfigDisabled: "This channel isn't accepting new rounds.",
@@ -9,7 +9,7 @@ const CONTRACT_ERRORS: Readonly<Record<string, string>> = {
   ERC20InsufficientAllowance: "Approve a larger amount first.",
   ERC20InsufficientBalance: "Your balance is too low for this.",
   InexactTokenTransfer: "The token moved an unexpected amount, so the transaction was reversed.",
-  InsufficientFiddy: "This position doesn't have enough unstaked BONA.",
+  InsufficientBonanza: "This position doesn't have enough unstaked BONANZA.",
   InvalidAddress: "That receiver can't accept this payment.",
   InvalidRandomnessRound: "This round's beacon can't be scheduled right now.",
   InvalidRegistration: "This Operator can't be registered. Check that you own it and it's active.",
@@ -22,12 +22,12 @@ const CONTRACT_ERRORS: Readonly<Record<string, string>> = {
   NoWinnerClaim: "This prize has already been claimed.",
   OperatorAlreadyRegistered: "That Operator is registered to another account.",
   OperatorRouterUnavailable: "Operator payouts aren't available for this token right now.",
-  PositionRequired: "This round pays BONA, so it needs a position.",
+  PositionRequired: "This round pays BONANZA, so it needs a position.",
   ProtocolPaused: "The protocol is paused. Draws, claims and exits still work.",
   RandomnessPredatesClose:
     "That beacon was posted before sales closed, so it can't draw this round.",
   RandomnessUnavailable: "The registry rejected that beacon. Try again in a moment.",
-  ReceiverRestricted: "BONA can't be sent to that receiver.",
+  ReceiverRestricted: "BONANZA can't be sent to that receiver.",
   RoundExpired: "Sales for this round have closed.",
   RoundNotOpen: "This round is no longer on sale.",
   RoundNotReady: "This round can't be drawn yet.",
@@ -35,7 +35,7 @@ const CONTRACT_ERRORS: Readonly<Record<string, string>> = {
   StakeLocked: "This stake is still locked.",
   StaleRandomnessRound: "That beacon has already been posted, so the round can't open.",
   TicketLimitExceeded: "That's more tickets than one purchase allows.",
-  TransferRestricted: "BONA can only move through approved paths.",
+  TransferRestricted: "BONANZA can only move through approved paths.",
   WrapCapacityExceeded: "That's more than the wrap cap has left.",
   ZeroAmount: "Enter an amount above zero.",
 };

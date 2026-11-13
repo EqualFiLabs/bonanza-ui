@@ -91,7 +91,7 @@ export function useClaims(): readonly Claim[] {
           amount,
           call: (receiver) => ({
             ...lottery,
-            functionName: "claimFiddyRevenue",
+            functionName: "claimBonanzaRevenue",
             args: [position.id, asset, receiver],
           }),
         });

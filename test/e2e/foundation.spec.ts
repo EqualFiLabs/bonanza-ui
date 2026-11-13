@@ -1,7 +1,7 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
-const routes = ["/", "/tickets", "/bona", "/claims"];
+const routes = ["/", "/tickets", "/bonanza", "/claims"];
 
 test("fails closed where Bonanza isn't deployed", async ({ page }) => {
   const failures: string[] = [];

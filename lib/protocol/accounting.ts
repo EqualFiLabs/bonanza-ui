@@ -19,7 +19,7 @@ export type Allocation = Readonly<{
   treasury: bigint;
 }>;
 
-/** Mirrors `LibFiddyStaking.stakerShare`: one floor per purchase. */
+/** Mirrors `LibBonanzaStaking.stakerShare`: one floor per purchase. */
 export function stakerShare(amount: bigint, winnerBps: number, stakerProtocolBps: number): bigint {
   return (amount * (BPS - BigInt(winnerBps)) * BigInt(stakerProtocolBps)) / (BPS * BPS);
 }
@@ -49,7 +49,7 @@ export function allocate(
   };
 }
 
-/** Mirrors the weighted lock reset in `FiddyStakingFacet.stakeFiddy`. */
+/** Mirrors the weighted lock reset in `BonanzaStakingFacet.stakeBonanza`. */
 export function nextStakeStart(
   staked: bigint,
   stakeStart: bigint,

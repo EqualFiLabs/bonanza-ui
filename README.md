@@ -1,8 +1,8 @@
 # Bonanza
 
 The web app for Bonanza, onchain rounds on Robinhood Chain. Every ticket is a pixel of static until
-a drand beacon, fixed before its value existed, picks the winner. Playing earns BONA, and staking
-BONA earns a share of every ticket sold.
+a drand beacon, fixed before its value existed, picks the winner. Playing earns BONANZA, and staking
+BONANZA earns a share of every ticket sold.
 
 Built with Next.js 16, React 19, Privy, Wagmi and Viem. The contracts live in
 [EqualFiLabs/bonanza](https://github.com/EqualFiLabs/bonanza).
@@ -10,8 +10,8 @@ Built with Next.js 16, React 19, Privy, Wagmi and Viem. The contracts live in
 ## Status
 
 No network has a current deployment yet, so a public build shows "Not live yet". Real contract
-behavior is exercised on a local Robinhood Mainnet fork, described below. The contract source still
-uses the FIDDY name; the app calls the token BONA and takes its ABI from a pinned contract commit.
+behavior is exercised on a local Robinhood Mainnet fork, described below. The token name is Bonanza and its ticker is BONANZA. The app takes its ABI from a pinned
+contract commit and requires the matching renamed contract interface.
 
 ## Architecture
 

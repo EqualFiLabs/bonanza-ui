@@ -25,7 +25,11 @@ for (const [group, command] of Object.entries(builds)) {
       "--cache-path",
       resolve(forkDirectory, `cache-${group}`),
     ],
-    { cwd: contracts, stdio: ["ignore", "ignore", "inherit"] }
+    {
+      cwd: contracts,
+      stdio: ["ignore", "ignore", "inherit"],
+      env: { ...process.env, FOUNDRY_BYTECODE_HASH: "ipfs", FOUNDRY_CBOR_METADATA: "true" },
+    }
   );
   if (result.status !== 0) throw new Error(`The ${group} build failed.`);
 }

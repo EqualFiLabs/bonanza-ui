@@ -12,9 +12,9 @@ const facets = [
   "ClaimsFacet",
   "RevenueFacet",
   "LotteryViewFacet",
-  "FiddyTokenFacet",
-  "FiddyStakingFacet",
-  "FiddyViewFacet",
+  "BonanzaTokenFacet",
+  "BonanzaStakingFacet",
+  "BonanzaViewFacet",
 ];
 
 const seen = new Set();

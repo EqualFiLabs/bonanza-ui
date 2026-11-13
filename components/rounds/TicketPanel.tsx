@@ -57,7 +57,7 @@ function PositionSelect({
   if (!account?.positions.length) return null;
   return (
     <label className="field-label">
-      BONA goes to position
+      BONANZA goes to position
       <select
         value={value?.toString() ?? ""}
         onChange={(event) => onChange(BigInt(event.target.value))}
@@ -95,8 +95,8 @@ function OpenPanel({ listing }: { listing: Listing }) {
     const requested = rewards.unitsPerTicket * BigInt(quantity);
     return requested < protocol.reserve.inventory ? requested : protocol.reserve.inventory;
   })();
-  const bona = {
-    symbol: "BONA",
+  const bonanza = {
+    symbol: "BONANZA",
     decimals: tokenOf(protocol, protocol.bindings.underlying).decimals,
   };
   const valid = quantity >= 1 && quantity <= limit;
@@ -184,7 +184,7 @@ function OpenPanel({ listing }: { listing: Listing }) {
           <TxButton txKey={CREATE_POSITION_KEY} onClick={createPosition}>
             Create a position
           </TxButton>
-          <p className="why">This round pays BONA into a Statics position.</p>
+          <p className="why">This round pays BONANZA into a Statics position.</p>
         </>
       );
     }
@@ -273,9 +273,9 @@ function OpenPanel({ listing }: { listing: Listing }) {
       </div>
       {rewards.participation ? (
         <div className="rowline">
-          <span>BONA reward</span>
+          <span>BONANZA reward</span>
           <span className="mono">
-            {issued > 0n ? `+${formatToken(issued, bona)}` : "None"}
+            {issued > 0n ? `+${formatToken(issued, bonanza)}` : "None"}
             {issued > 0n ? null : <span className="sub">Reward inventory is empty</span>}
           </span>
         </div>

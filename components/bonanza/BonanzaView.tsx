@@ -33,11 +33,11 @@ const LOCK_HOURS = Number(STAKE_LOCK_SECONDS) / 3_600;
 
 const lottery = () => ({ address: deployment!.lottery, abi: lotteryAbi });
 
-/** BONA carries its backing token's decimals. */
-function useBona() {
+/** BONANZA carries its backing token's decimals. */
+function useBonanza() {
   const { protocol } = useProtocol();
   const { decimals } = tokenOf(protocol, protocol.bindings.underlying);
-  return { decimals, bona: (value: bigint) => formatAmount(value, decimals, 2) };
+  return { decimals, bonanza: (value: bigint) => formatAmount(value, decimals, 2) };
 }
 
 const multiplier = (position: StakingAccount) =>
@@ -45,7 +45,7 @@ const multiplier = (position: StakingAccount) =>
 
 function Stake({ position }: { position: StakingAccount }) {
   const { protocol, now } = useProtocol();
-  const { bona, decimals } = useBona();
+  const { bonanza, decimals } = useBonanza();
   const { busy, run } = useTx();
   const gate = useWalletGate();
   const [tab, setTab] = useState<"stake" | "unstake">("stake");
@@ -71,12 +71,12 @@ function Stake({ position }: { position: StakingAccount }) {
       txKey,
       async () => ({
         ...lottery(),
-        functionName: staking ? "stakeFiddy" : "unstakeFiddy",
+        functionName: staking ? "stakeBonanza" : "unstakeBonanza",
         args: [position.id, value],
       }),
       {
-        action: `${staking ? "Stake" : "Unstake"} ${bona(value)} BONA`,
-        success: `${staking ? "Staked" : "Unstaked"} ${bona(value)} BONA`,
+        action: `${staking ? "Stake" : "Unstake"} ${bonanza(value)} BONANZA`,
+        success: `${staking ? "Staked" : "Unstaked"} ${bonanza(value)} BONANZA`,
       }
     );
     if (done) setText("");
@@ -105,15 +105,15 @@ function Stake({ position }: { position: StakingAccount }) {
         return (
           <>
             <TxButton txKey={txKey} disabled>
-              Not enough unstaked BONA
+              Not enough unstaked BONANZA
             </TxButton>
-            <p className="why">This position has {bona(free)} unstaked.</p>
+            <p className="why">This position has {bonanza(free)} unstaked.</p>
           </>
         );
       }
       return (
         <TxButton txKey={txKey} onClick={() => void submit()}>
-          Stake {bona(value)} BONA
+          Stake {bonanza(value)} BONANZA
         </TxButton>
       );
     }
@@ -150,7 +150,7 @@ function Stake({ position }: { position: StakingAccount }) {
     }
     return (
       <TxButton txKey={txKey} onClick={() => void submit()}>
-        Unstake {bona(value)} BONA
+        Unstake {bonanza(value)} BONANZA
       </TxButton>
     );
   };
@@ -161,11 +161,11 @@ function Stake({ position }: { position: StakingAccount }) {
       <div className="stats">
         <div>
           <span>Staked</span>
-          <b>{bona(position.staked)}</b>
+          <b>{bonanza(position.staked)}</b>
         </div>
         <div>
           <span>Revenue weight</span>
-          <b>{bona(position.weight)}</b>
+          <b>{bonanza(position.weight)}</b>
         </div>
         <div>
           <span>Share of stakers</span>
@@ -203,23 +203,23 @@ function Stake({ position }: { position: StakingAccount }) {
           inputMode="decimal"
           placeholder="0"
           value={text}
-          aria-label="BONA amount"
+          aria-label="BONANZA amount"
           onChange={(event) => setText(event.target.value)}
         />
         <button
           type="button"
           onClick={() => setText(formatUnits(staking ? free : position.staked, decimals))}
         >
-          Max {bona(staking ? free : position.staked)}
+          Max {bonanza(staking ? free : position.staked)}
         </button>
-        <span>BONA</span>
+        <span>BONANZA</span>
       </div>
       <div className="calc">
         {staking ? (
           <>
             <div className="rowline">
               <span>Revenue weight after</span>
-              <span className="mono">{bona(weightAfter)}</span>
+              <span className="mono">{bonanza(weightAfter)}</span>
             </div>
             <div className="rowline">
               <span>Unlock after this stake</span>
@@ -234,7 +234,7 @@ function Stake({ position }: { position: StakingAccount }) {
             <div className="rowline">
               <span>Stake left after</span>
               <span className="mono">
-                {bona(position.staked > value ? position.staked - value : 0n)}
+                {bonanza(position.staked > value ? position.staked - value : 0n)}
               </span>
             </div>
             <div className="rowline">
@@ -281,7 +281,7 @@ function Revenue({ position }: { position: StakingAccount }) {
                       key,
                       async () => ({
                         ...lottery(),
-                        functionName: "claimFiddyRevenue",
+                        functionName: "claimBonanzaRevenue",
                         args: [position.id, asset, address],
                       }),
                       {
@@ -343,7 +343,7 @@ function OperatorBoost({ position }: { position: StakingAccount }) {
         }
         return {
           ...lottery(),
-          functionName: "registerFiddyOperator",
+          functionName: "registerBonanzaOperator",
           args: [position.id, operatorId],
         };
       },
@@ -392,11 +392,11 @@ function OperatorBoost({ position }: { position: StakingAccount }) {
           <div className="pair-actions">
             {accountAction(
               `checkpoint-${position.id}`,
-              "checkpointFiddyAccount",
+              "checkpointBonanzaAccount",
               "Checkpoint",
               "Checkpoint booked"
             )}
-            {accountAction(removeKey, "removeFiddyOperator", "Remove boost", "Boost removed")}
+            {accountAction(removeKey, "removeBonanzaOperator", "Remove boost", "Boost removed")}
           </div>
         </>
       ) : (
@@ -438,14 +438,14 @@ function OperatorBoost({ position }: { position: StakingAccount }) {
 
 function Reserve() {
   const { protocol } = useProtocol();
-  const { bona } = useBona();
+  const { bonanza } = useBonanza();
   const { inventory, backing, custody } = protocol.reserve;
   return (
     <section className="card" aria-label="Reward reserve">
       <h2 className="disp">Reserve</h2>
       <div className="rowline">
         <span>Reward inventory</span>
-        <span className="mono">{bona(inventory)} BONA</span>
+        <span className="mono">{bonanza(inventory)} BONANZA</span>
       </div>
       <div
         className="meter"
@@ -456,19 +456,19 @@ function Reserve() {
       </div>
       <div className="rowline">
         <span>Total supply</span>
-        <span className="mono">{bona(backing)}</span>
+        <span className="mono">{bonanza(backing)}</span>
       </div>
       <div className="rowline">
         <span>STATICS backing</span>
-        <span className="mono">{bona(backing)}</span>
+        <span className="mono">{bonanza(backing)}</span>
       </div>
       <div className="rowline">
         <span>Held in accounts</span>
-        <span className="mono">{bona(custody)}</span>
+        <span className="mono">{bonanza(custody)}</span>
       </div>
       <div className="rowline">
         <span>Total staked weight</span>
-        <span className="mono">{bona(protocol.totalWeight)}</span>
+        <span className="mono">{bonanza(protocol.totalWeight)}</span>
       </div>
     </section>
   );
@@ -476,7 +476,7 @@ function Reserve() {
 
 function Conversions({ position }: { position: StakingAccount }) {
   const { protocol, account } = useProtocol();
-  const { bona, decimals } = useBona();
+  const { bonanza, decimals } = useBonanza();
   const { address } = useWalletState();
   const { busy, run } = useTx();
   const gate = useWalletGate();
@@ -508,7 +508,7 @@ function Conversions({ position }: { position: StakingAccount }) {
     if (unwrapAmount > free) {
       return (
         <TxButton txKey={unwrapKey} disabled>
-          Not enough unstaked BONA
+          Not enough unstaked BONANZA
         </TxButton>
       );
     }
@@ -520,18 +520,18 @@ function Conversions({ position }: { position: StakingAccount }) {
             unwrapKey,
             async () => ({
               ...lottery(),
-              functionName: "unwrapFiddy",
+              functionName: "unwrapBonanza",
               args: [position.id, unwrapAmount, address],
             }),
             {
-              action: `Unwrap ${bona(unwrapAmount)} BONA`,
-              success: `Unwrapped ${bona(unwrapAmount)} BONA`,
+              action: `Unwrap ${bonanza(unwrapAmount)} BONANZA`,
+              success: `Unwrapped ${bonanza(unwrapAmount)} BONANZA`,
             }
           );
           if (done) setUnwrapText("");
         }}
       >
-        Unwrap {bona(unwrapAmount)} BONA
+        Unwrap {bonanza(unwrapAmount)} BONANZA
       </TxButton>
     );
   };
@@ -557,7 +557,7 @@ function Conversions({ position }: { position: StakingAccount }) {
     if (wrapAmount > room) {
       return (
         <TxButton txKey={wrapKey} disabled>
-          Only {bona(room)} left under the cap
+          Only {bonanza(room)} left under the cap
         </TxButton>
       );
     }
@@ -597,7 +597,7 @@ function Conversions({ position }: { position: StakingAccount }) {
             wrapKey,
             async () => ({
               ...lottery(),
-              functionName: "wrapFiddy",
+              functionName: "wrapBonanza",
               args: [position.id, wrapAmount],
             }),
             {
@@ -619,7 +619,7 @@ function Conversions({ position }: { position: StakingAccount }) {
       <div className="listrow">
         <div>
           <b>Unwrap to {underlying.symbol}</b>
-          <span className="sub">Burn unstaked BONA for its backing</span>
+          <span className="sub">Burn unstaked BONANZA for its backing</span>
         </div>
         <span className={`closed ${unwrapEnabled ? "on" : ""}`}>
           {unwrapEnabled ? "OPEN" : "CLOSED"}
@@ -632,10 +632,10 @@ function Conversions({ position }: { position: StakingAccount }) {
               inputMode="decimal"
               placeholder="0"
               value={unwrapText}
-              aria-label="BONA to unwrap"
+              aria-label="BONANZA to unwrap"
               onChange={(event) => setUnwrapText(event.target.value)}
             />
-            <span>BONA</span>
+            <span>BONANZA</span>
           </div>
           {unwrapAction()}
         </>
@@ -643,7 +643,7 @@ function Conversions({ position }: { position: StakingAccount }) {
       <div className="listrow">
         <div>
           <b>Wrap {underlying.symbol}</b>
-          <span className="sub">Mint BONA 1:1 into this position</span>
+          <span className="sub">Mint BONANZA 1:1 into this position</span>
         </div>
         <span className={`closed ${wrapEnabled ? "on" : ""}`}>
           {wrapEnabled ? "OPEN" : "CLOSED"}
@@ -657,7 +657,7 @@ function Conversions({ position }: { position: StakingAccount }) {
           <div className="rowline">
             <span>Wrap cap</span>
             <span className="mono">
-              {bona(wrapOutstanding)} of {bona(wrapCap)}
+              {bonanza(wrapOutstanding)} of {bonanza(wrapCap)}
             </span>
           </div>
           <div className="amount">
@@ -677,9 +677,9 @@ function Conversions({ position }: { position: StakingAccount }) {
   );
 }
 
-export function BonaView() {
+export function BonanzaView() {
   const { protocol, account, accountLoading } = useProtocol();
-  const { bona } = useBona();
+  const { bonanza } = useBonanza();
   const gate = useWalletGate();
   const createPosition = useCreatePosition();
   const [chosen, setChosen] = useState<bigint | null>(null);
@@ -689,8 +689,8 @@ export function BonaView() {
 
   const heading = (
     <div className="pagehead">
-      <h1 className="disp">BONA</h1>
-      <p>Earn BONA by playing. Stake it in a position for a share of every ticket sold.</p>
+      <h1 className="disp">BONANZA</h1>
+      <p>Earn BONANZA by playing. Stake it in a position for a share of every ticket sold.</p>
     </div>
   );
 
@@ -700,7 +700,7 @@ export function BonaView() {
         {heading}
         <div className="cards">
           <div className="empty">
-            Connect a wallet to stake BONA.
+            Connect a wallet to stake BONANZA.
             {gate}
           </div>
           <Reserve />
@@ -722,7 +722,7 @@ export function BonaView() {
         {heading}
         <div className="cards">
           <div className="empty">
-            BONA lives on a Statics position, which you can sell or move like any NFT.
+            BONANZA lives on a Statics position, which you can sell or move like any NFT.
             <TxButton txKey={CREATE_POSITION_KEY} onClick={createPosition}>
               Create a position
             </TxButton>
@@ -735,12 +735,12 @@ export function BonaView() {
 
   return (
     <>
-      <div className="hero-bona">
+      <div className="hero-bonanza">
         <div>
-          <div className="eyebrow">BONA · Position #{position.id.toString()}</div>
+          <div className="eyebrow">BONANZA · Position #{position.id.toString()}</div>
           <h1 className="disp">
-            {bona(position.balance)}
-            <small>BONA</small>
+            {bonanza(position.balance)}
+            <small>BONANZA</small>
           </h1>
           <p className="muted hero-note">
             {unwrapEnabled

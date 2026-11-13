@@ -13,7 +13,7 @@ import { Logo } from "./Logo";
 const LINKS = [
   { href: "/", label: "Rounds" },
   { href: "/tickets", label: "My tickets" },
-  { href: "/bona", label: "BONA" },
+  { href: "/bonanza", label: "BONANZA" },
   { href: "/claims", label: "Claims" },
 ];
 
